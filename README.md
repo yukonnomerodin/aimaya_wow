@@ -1,6 +1,6 @@
 # Aimaya: Connecting Eras 🌌
 
-![Midnight Header](https://raw.githubusercontent.com/yukonnomerodin/aimaya_wow/main/docs/midnight_banner.jpg) 
+![Midnight Header](https://raw.githubusercontent.com/yukonnomerodin/aimaya_wow/main/aimaya.jpg) 
 *(Note: Replace with your actual banner link later or use a stylish placeholder)*
 
 **Aimaya** is a high-performance C# gateway designed to bridge the gap between modern **World of Warcraft (Retail 12.0.1, Build 66017)** and legacy server cores like **AzerothCore**.
