@@ -2,7 +2,6 @@
 
 ![Midnight Header](https://raw.githubusercontent.com/yukonnomerodin/aimaya_wow/main/aimaya1.jpg) 
 
-
 **Aimaya** is a high-performance C# gateway designed to bridge the gap between modern **World of Warcraft (Retail 12.0.1, Build 66017)** and legacy server cores like **AzerothCore**.
 
 ---
@@ -34,6 +33,17 @@
 | **AuthGateway** | ✅ Online | Login, RealmList, and Ticket issuance are fully functional. |
 | **WorldGateway** | 🛠️ In Progress | Working on packet translation and session proxying. |
 | **Database Support**| ✅ Online | Basic AzerothCore auth database integration. |
+
+---
+
+## ❤️ Credits & Acknowledgments
+
+Aimaya stands on the shoulders of giants. We express our deepest gratitude to the legendary communities and contributors who built the foundation of modern emulation:
+
+* **[TrinityCore](https://www.trinitycore.org/)** — For establishing the gold standard of open-source server emulation and protocol research.
+* **[AzerothCore](https://www.azerothcore.org/)** — For the incredible modularity and community-driven excellence that powers our backend.
+
+*Respect to all developers who keep the magic of Azeroth alive.*
 
 ---
 
