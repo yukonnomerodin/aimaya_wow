@@ -57,7 +57,7 @@ Aimaya stands on the shoulders of giants. We express our deepest gratitude to th
 
 ## 👤 Author
 
-Developed with ⚔️ and 💻 by **Kuma**.
+Developed with ⚔️**yukoNw** and 💻 by **Kuma**.
 
 ---
 
