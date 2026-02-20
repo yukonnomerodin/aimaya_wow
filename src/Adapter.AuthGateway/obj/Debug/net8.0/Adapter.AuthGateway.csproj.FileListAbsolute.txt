@@ -58,3 +58,4 @@ e:\_acproject\aimaya_wow\artifacts\authgw_build\Adapter.AuthGateway.deps.json
 e:\_acproject\aimaya_wow\artifacts\authgw_build\Adapter.AuthGateway.runtimeconfig.json
 e:\_acproject\aimaya_wow\artifacts\authgw_build\Adapter.AuthGateway.dll
 e:\_acproject\aimaya_wow\artifacts\authgw_build\Adapter.AuthGateway.pdb
+E:\_acproject\aimaya_wow\src\Adapter.AuthGateway\obj\Debug\net8.0\Adapter.AuthGateway.sourcelink.json
