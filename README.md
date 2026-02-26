@@ -2,7 +2,7 @@
 
 ![Midnight Header](https://raw.githubusercontent.com/yukonnomerodin/aimaya_wow/main/aimaya1.jpg) 
 
-**Aimaya** is a high-performance C# gateway designed to bridge the gap between modern **World of Warcraft (Retail 12.0.1, Build 66017)** and legacy server cores like **AzerothCore**.
+**Aimaya** is a high-performance C# gateway designed to bridge the gap between modern **World of Warcraft (Retail 12.0.1, Build 66102)** and legacy server cores like **AzerothCore**.
 
 ---
 
