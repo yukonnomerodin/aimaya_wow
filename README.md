@@ -9,9 +9,11 @@
 ## 🚀 Key Features
 
 * **Modern Auth Pipeline**: Fully implemented **SRP6** authentication and **TLS** encrypted sessions.
+* **Retail World Encryption**: Stable **AES-GCM world channel** negotiation and encrypted session bootstrap.
 * **Protocol Translation**: Seamlessly translates modern **Protobuf** messages into legacy-compatible instructions.
 * **Dynamic RealmList**: Generates **Zlib-compressed JSON** realm lists required by modern Battle.net SDK clients.
 * **Intelligent Handoff**: Implements `RealmJoinRequest` to issue valid session tickets for World server transitions.
+* **Deferred Frame Synchronization**: Deterministic post-handshake frame flushing for retail compatibility.
 * **Database Integration**: Powered by **Dapper** for fast and reliable data management.
 
 ---
@@ -23,6 +25,7 @@
 * **ORM**: Dapper
 * **Network**: System.IO.Pipelines for high-throughput socket handling
 * **Serialization**: Protobuf & Zlib
+* **Encryption**: SRP6, TLS, AES-GCM
 
 ---
 
@@ -30,9 +33,34 @@
 
 | Component | Status | Description |
 | :--- | :--- | :--- |
-| **AuthGateway** | ✅ Online | Login, RealmList, and Ticket issuance are fully functional. |
-| **WorldGateway** | 🛠️ In Progress | Working on packet translation and session proxying. |
-| **Database Support**| ✅ Online | Basic AzerothCore auth database integration. |
+| **AuthGateway** | ✅ Online | Login, RealmList, Ticket issuance, and encrypted world bootstrap fully functional. |
+| **WorldGateway** | 🚀 Milestone M1 Complete | Retail client reaches Character Selection via encrypted world channel. Opcode translation layer under active expansion. |
+| **Database Support**| ✅ Online | AzerothCore auth database integration operational. |
+
+---
+
+## 🧠 Milestone M1 – Retail World Bootstrap
+
+The bridge now successfully:
+
+- Completes encrypted world handshake (AES-GCM)
+- Enters secure world mode
+- Performs deterministic post-ACK frame synchronization
+- Achieves stable session state transition
+- Reaches Character Enumeration stage
+- Displays retail Character Selection screen
+
+This confirms full compatibility of the retail client authentication and world bootstrap pipeline through Aimaya.
+
+---
+
+## 🛠️ Ongoing Development (M2+)
+
+- Character Creation pipeline support  
+- World entry & spawn initialization  
+- Movement synchronization layer  
+- Opcode mapping expansion  
+- Entity & gameplay state translation  
 
 ---
 
@@ -57,7 +85,7 @@ Aimaya stands on the shoulders of giants. We express our deepest gratitude to th
 
 ## 👤 Author
 
-Developed with ⚔️**yukoNw** and 💻 by **Kuma**.
+Developed with ⚔️ **yukoNw** and 💻 by **Kuma**.
 
 ---
 
