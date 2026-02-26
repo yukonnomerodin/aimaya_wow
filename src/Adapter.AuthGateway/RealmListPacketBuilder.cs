@@ -12,7 +12,7 @@ internal static class RealmListPacketBuilder
 {
     private const byte DefaultRealmType = 0; // Normal
     private const uint DefaultRealmFlags = 0; // Online + compatible
-    private const uint DefaultClientBuild = 66017; // WoW 12.0.1.66017
+    private const uint DefaultClientBuild = 66102; // WoW 12.0.1.66102
 
     private static readonly byte[] JsonRealmListUpdatesPrefix = "JSONRealmListUpdates:"u8.ToArray();
     private static readonly byte[] JsonRealmCharacterCountListPrefix = "JSONRealmCharacterCountList:"u8.ToArray();

@@ -1,0 +1,297 @@
+﻿using System;
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+
+namespace Adapter.WorldGateway;
+
+internal sealed class TrinityWorldPacketCrypt : IDisposable
+{
+    private const uint ClientNonceMagic = 0x544E4C43; // "CLNT"
+    private const uint ServerNonceMagic = 0x52565253; // "SRVR"
+    private const int NonceBytes = 12;
+    private const int HeaderBytes = 16;
+    private const int MinFrameBytes = 20;
+    private const int TagBytes = 12;
+    private const int MaxFrameBytes = 16 * 1024 * 1024;
+
+    private AesGcm? _aes;
+    private readonly bool _useSizeAsAad;
+    private readonly bool _useEmptyAad;
+    private readonly int _aadSizeBytes;
+    private readonly RetailWorldPacketCryptNonceLayout _nonceLayout;
+    private readonly uint _clientNonceMagic;
+    private readonly uint _serverNonceMagic;
+    private ulong _clientCounter;
+    private ulong _serverCounter;
+
+    public TrinityWorldPacketCrypt(
+        ulong serverInitialCounter = 0,
+        ulong clientInitialCounter = 0,
+        bool useSizeAsAad = false,
+        int aadSizeBytes = 4,
+        bool useEmptyAad = false,
+        string nonceLayout = "counter_le_magic_le",
+        string serverNonceMagic = "srvr",
+        string clientNonceMagic = "clnt")
+    {
+        if (aadSizeBytes != 2 && aadSizeBytes != 4)
+        {
+            throw new ArgumentOutOfRangeException(nameof(aadSizeBytes), aadSizeBytes, "Retail world crypt AAD size must be 2 or 4 bytes.");
+        }
+
+        _useSizeAsAad = useSizeAsAad;
+        _aadSizeBytes = aadSizeBytes;
+        _useEmptyAad = useEmptyAad;
+        _nonceLayout = ParseNonceLayout(nonceLayout);
+        _serverNonceMagic = ParseServerNonceMagic(serverNonceMagic);
+        _clientNonceMagic = ParseClientNonceMagic(clientNonceMagic);
+        _serverCounter = serverInitialCounter;
+        _clientCounter = clientInitialCounter;
+    }
+
+    public bool IsInitialized => _aes is not null;
+
+    public void Init(ReadOnlySpan<byte> key32)
+    {
+        if (key32.Length != 32)
+        {
+            throw new ArgumentException("Retail world crypt key must be exactly 32 bytes.", nameof(key32));
+        }
+
+        _aes?.Dispose();
+        _aes = new AesGcm(key32.ToArray(), TagBytes);
+    }
+
+    public bool TryProtectServerFrame(
+        ReadOnlySpan<byte> plainFrame,
+        out byte[] protectedFrame,
+        out ulong serverCounterUsed,
+        out string? error)
+    {
+        protectedFrame = Array.Empty<byte>();
+        serverCounterUsed = _serverCounter;
+        error = null;
+
+        if (!TryValidateRetailFrame(plainFrame, out int bodyLength, out int frameBytes, out error))
+        {
+            return false;
+        }
+
+        protectedFrame = GC.AllocateUninitializedArray<byte>(frameBytes);
+        Span<byte> destination = protectedFrame;
+
+        plainFrame.Slice(0, 4).CopyTo(destination.Slice(0, 4));
+        Span<byte> destinationTag = destination.Slice(4, TagBytes);
+        Span<byte> destinationBody = destination.Slice(HeaderBytes, bodyLength);
+        ReadOnlySpan<byte> plainBody = plainFrame.Slice(HeaderBytes, bodyLength);
+
+        if (_aes is null)
+        {
+            destinationTag.Clear();
+            plainBody.CopyTo(destinationBody);
+            _serverCounter++;
+            return true;
+        }
+
+        Span<byte> nonce = stackalloc byte[NonceBytes];
+        WriteNonce(serverCounterUsed, _serverNonceMagic, nonce, _nonceLayout);
+        ReadOnlySpan<byte> associatedData = (_useEmptyAad || !_useSizeAsAad)
+            ? ReadOnlySpan<byte>.Empty
+            : plainFrame.Slice(0, _aadSizeBytes);
+
+        try
+        {
+            _aes.Encrypt(
+                nonce,
+                plainBody,
+                destinationBody,
+                destinationTag,
+                associatedData);
+        }
+        catch (CryptographicException ex)
+        {
+            protectedFrame = Array.Empty<byte>();
+            error = ex.Message;
+            return false;
+        }
+
+        _serverCounter++;
+        return true;
+    }
+
+    public bool TryDecodeClientFrame(ReadOnlySpan<byte> wireFrame, out byte[] plainFrame, out string? error)
+    {
+        plainFrame = Array.Empty<byte>();
+        error = null;
+
+        if (!TryValidateRetailFrame(wireFrame, out int bodyLength, out int frameBytes, out error))
+        {
+            return false;
+        }
+
+        plainFrame = GC.AllocateUninitializedArray<byte>(frameBytes);
+        Span<byte> destination = plainFrame;
+
+        wireFrame.Slice(0, 4).CopyTo(destination.Slice(0, 4));
+        destination.Slice(4, TagBytes).Clear();
+        Span<byte> destinationBody = destination.Slice(HeaderBytes, bodyLength);
+
+        if (_aes is null)
+        {
+            wireFrame.Slice(HeaderBytes, bodyLength).CopyTo(destinationBody);
+            _clientCounter++;
+            return true;
+        }
+
+        Span<byte> nonce = stackalloc byte[NonceBytes];
+        WriteNonce(_clientCounter, _clientNonceMagic, nonce, _nonceLayout);
+        ReadOnlySpan<byte> associatedData = (_useEmptyAad || !_useSizeAsAad)
+            ? ReadOnlySpan<byte>.Empty
+            : wireFrame.Slice(0, _aadSizeBytes);
+
+        try
+        {
+            _aes.Decrypt(
+                nonce,
+                wireFrame.Slice(HeaderBytes, bodyLength),
+                wireFrame.Slice(4, TagBytes),
+                destinationBody,
+                associatedData);
+        }
+        catch (CryptographicException ex)
+        {
+            plainFrame = Array.Empty<byte>();
+            error = ex.Message;
+            return false;
+        }
+
+        _clientCounter++;
+        return true;
+    }
+
+    public void Dispose()
+    {
+        _aes?.Dispose();
+        _aes = null;
+    }
+
+    private static bool TryValidateRetailFrame(ReadOnlySpan<byte> frame, out int bodyLength, out int frameBytes, out string? error)
+    {
+        bodyLength = 0;
+        frameBytes = 0;
+        error = null;
+
+        if (frame.Length < MinFrameBytes)
+        {
+            error = $"Retail world frame is too short: {frame.Length}.";
+            return false;
+        }
+
+        uint body = BinaryPrimitives.ReadUInt32LittleEndian(frame.Slice(0, 4));
+        if (body < 4 || body > MaxFrameBytes)
+        {
+            error = $"Retail world frame has invalid body length: {body}.";
+            return false;
+        }
+
+        long total = HeaderBytes + body;
+        if (total > int.MaxValue || total > MaxFrameBytes)
+        {
+            error = $"Retail world frame has invalid total length: {total}.";
+            return false;
+        }
+
+        bodyLength = (int)body;
+        frameBytes = (int)total;
+        if (frame.Length != frameBytes)
+        {
+            error = $"Retail world frame size mismatch: expected {frameBytes}, got {frame.Length}.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static void WriteNonce(
+        ulong counter,
+        uint magic,
+        Span<byte> nonce,
+        RetailWorldPacketCryptNonceLayout layout)
+    {
+        switch (layout)
+        {
+            case RetailWorldPacketCryptNonceLayout.CounterLeMagicLe:
+                BinaryPrimitives.WriteUInt64LittleEndian(nonce.Slice(0, 8), counter);
+                BinaryPrimitives.WriteUInt32LittleEndian(nonce.Slice(8, 4), magic);
+                break;
+            case RetailWorldPacketCryptNonceLayout.CounterBeMagicLe:
+                BinaryPrimitives.WriteUInt64BigEndian(nonce.Slice(0, 8), counter);
+                BinaryPrimitives.WriteUInt32LittleEndian(nonce.Slice(8, 4), magic);
+                break;
+            case RetailWorldPacketCryptNonceLayout.MagicLeCounterBe:
+                BinaryPrimitives.WriteUInt32LittleEndian(nonce.Slice(0, 4), magic);
+                BinaryPrimitives.WriteUInt64BigEndian(nonce.Slice(4, 8), counter);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unsupported nonce layout.");
+        }
+    }
+
+    private static RetailWorldPacketCryptNonceLayout ParseNonceLayout(string rawLayout)
+    {
+        if (string.IsNullOrWhiteSpace(rawLayout))
+        {
+            return RetailWorldPacketCryptNonceLayout.CounterLeMagicLe;
+        }
+
+        string normalized = rawLayout.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "counter_le_magic_le" => RetailWorldPacketCryptNonceLayout.CounterLeMagicLe,
+            "counter_be_magic_le" => RetailWorldPacketCryptNonceLayout.CounterBeMagicLe,
+            "magic_le_counter_be" => RetailWorldPacketCryptNonceLayout.MagicLeCounterBe,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(rawLayout),
+                rawLayout,
+                "Unsupported RetailWorldPacketCrypt nonce layout. Allowed: counter_le_magic_le, counter_be_magic_le, magic_le_counter_be.")
+        };
+    }
+
+    private static uint ParseServerNonceMagic(string rawMagic)
+    {
+        if (string.IsNullOrWhiteSpace(rawMagic))
+        {
+            return ServerNonceMagic;
+        }
+
+        string normalized = rawMagic.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "srvr" => ServerNonceMagic,
+            "clnt" => ClientNonceMagic,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(rawMagic),
+                rawMagic,
+                "Unsupported RetailWorldPacketCrypt server nonce magic. Allowed: srvr, clnt.")
+        };
+    }
+
+    private static uint ParseClientNonceMagic(string rawMagic)
+    {
+        if (string.IsNullOrWhiteSpace(rawMagic))
+        {
+            return ClientNonceMagic;
+        }
+
+        string normalized = rawMagic.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "clnt" => ClientNonceMagic,
+            "srvr" => ServerNonceMagic,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(rawMagic),
+                rawMagic,
+                "Unsupported RetailWorldPacketCrypt client nonce magic. Allowed: clnt, srvr.")
+        };
+    }
+}

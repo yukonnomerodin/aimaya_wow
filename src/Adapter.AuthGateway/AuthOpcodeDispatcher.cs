@@ -73,10 +73,12 @@ public static class BnetServiceHashes
 
 internal static class BnetContextKeys
 {
+    public const string AccountId = "bnet.accountId";
     public const string GameAccountName = "bnet.gameAccountName";
     public const string ClientPlatformFourCc = "bnet.clientPlatformFourCc";
     public const string ClientArchFourCc = "bnet.clientArchFourCc";
     public const string ClientTypeFourCc = "bnet.clientTypeFourCc";
+    public const string ClientSecret32 = "bnet.clientSecret32";
 }
 
 /// <summary>
@@ -727,36 +729,42 @@ public sealed class BnetAuthenticationLogonHandler : IBnetHandler
 
         _logger.LogInformation("[Bnet][Auth] Credentials accepted. Welcome, aimaya!");
 
-        // RPC response for AuthenticationService.Logon has NoData payload on success.
-        await context.SendBnetResponseAsync(token, ReadOnlyMemory<byte>.Empty, cancellationToken).ConfigureAwait(false);
-
-        int accountId = 1;
-        string accountUsername = ExpectedLogin;
-        if (!string.IsNullOrWhiteSpace(normalizedLogin))
+        AccountData? account;
+        try
         {
-            try
-            {
-                AccountData? account = await _databaseService.GetAccountData(normalizedLogin, cancellationToken).ConfigureAwait(false);
-                if (account is not null)
-                {
-                    accountId = account.Id;
-                    accountUsername = account.Username;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "[Bnet][Auth] Account lookup failed for '{Lookup}'. Falling back to synthetic account id. ConnectionId={ConnectionId}",
-                    normalizedLogin,
-                context.ConnectionId);
-            }
+            account = await _databaseService.GetAccountData(normalizedLogin, cancellationToken).ConfigureAwait(false);
         }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "[Bnet][Auth] Account lookup failed for '{Lookup}'. ConnectionId={ConnectionId}",
+                normalizedLogin,
+                context.ConnectionId);
+            await context.SendBnetStatusAsync(token, status: 1u, cancellationToken).ConfigureAwait(false);
+            return AuthDispatchResult.Disconnect;
+        }
+
+        if (account is null)
+        {
+            _logger.LogWarning(
+                "[Bnet][Auth] Credentials rejected. Account '{Lookup}' does not exist in acore_auth.account. ConnectionId={ConnectionId}",
+                normalizedLogin,
+                context.ConnectionId);
+            await context.SendBnetStatusAsync(token, status: 1u, cancellationToken).ConfigureAwait(false);
+            return AuthDispatchResult.Disconnect;
+        }
+
+        int accountId = account.Id;
+        string accountUsername = string.IsNullOrWhiteSpace(account.Username)
+            ? ExpectedLogin
+            : account.Username.Trim().ToUpperInvariant();
 
         uint clientPlatformType = BnetClientVariantResolver.ResolvePlatformType(requestInfo.Platform);
         uint clientArch = BnetClientVariantResolver.ResolveArch(requestInfo.Platform);
         uint clientType = BnetClientVariantResolver.ResolveType(requestInfo.Program);
 
+        context.SetValue(BnetContextKeys.AccountId, accountId);
         context.SetValue(BnetContextKeys.GameAccountName, accountUsername);
         context.SetValue(BnetContextKeys.ClientPlatformFourCc, clientPlatformType);
         context.SetValue(BnetContextKeys.ClientArchFourCc, clientArch);
@@ -771,13 +779,15 @@ public sealed class BnetAuthenticationLogonHandler : IBnetHandler
 
         try
         {
-            bool updated = await _databaseService.UpdateSessionKey(accountId, sessionKey40, cancellationToken).ConfigureAwait(false);
+            bool updated = await _databaseService.UpdateSessionKey(accountId, sessionKey40, sessionKey64, cancellationToken).ConfigureAwait(false);
             if (!updated)
             {
                 _logger.LogWarning(
                     "[Bnet][Auth] Session key update affected 0 rows. AccountId={AccountId}, ConnectionId={ConnectionId}",
                     accountId,
                     context.ConnectionId);
+                await context.SendBnetStatusAsync(token, status: 1u, cancellationToken).ConfigureAwait(false);
+                return AuthDispatchResult.Disconnect;
             }
         }
         catch (Exception ex)
@@ -787,7 +797,12 @@ public sealed class BnetAuthenticationLogonHandler : IBnetHandler
                 "[Bnet][Auth] Failed to persist session key for AccountId={AccountId}. ConnectionId={ConnectionId}",
                 accountId,
                 context.ConnectionId);
+            await context.SendBnetStatusAsync(token, status: 1u, cancellationToken).ConfigureAwait(false);
+            return AuthDispatchResult.Disconnect;
         }
+
+        // RPC response for AuthenticationService.Logon has NoData payload on success.
+        await context.SendBnetResponseAsync(token, ReadOnlyMemory<byte>.Empty, cancellationToken).ConfigureAwait(false);
 
         var logonResultPayload = new ArrayBufferWriter<byte>(256);
         var writer = new ProtobufWriter(logonResultPayload);
@@ -816,12 +831,14 @@ public sealed class BnetAuthenticationLogonHandler : IBnetHandler
                 cancellationToken)
             .ConfigureAwait(false);
 
+        string sessionKeySha256 = Convert.ToHexString(SHA256.HashData(sessionKey64));
         _logger.LogInformation(
-            "[Bnet][Auth] OnLogonComplete sent. ConnectionId={ConnectionId}, AccountId={AccountId}, Username={Username}, SessionKeyBytes={SessionKeyBytes}",
+            "[Bnet][Auth] OnLogonComplete sent. ConnectionId={ConnectionId}, AccountId={AccountId}, Username={Username}, SessionKeyBytes={SessionKeyBytes}, SessionKeySha256={SessionKeySha256}",
             context.ConnectionId,
             accountId,
             accountUsername,
-            sessionKey64.Length);
+            sessionKey64.Length,
+            sessionKeySha256);
 
         return AuthDispatchResult.Continue;
     }
@@ -929,7 +946,7 @@ public sealed class BnetGameUtilitiesHandler : IBnetHandler
             BnetGameUtilitiesPayloadParser.TryReadClientRequestInfo(payload, out BnetGameUtilitiesRequestInfo requestInfo);
 
             _logger.LogInformation(
-                "[Bnet][GameUtilities] ProcessClientRequest received. Token={Token}, ConnectionId={ConnectionId}, Command={Command}, Attributes={Attributes}, SubRegion={SubRegion}, RealmAddress={RealmAddress}, HasAccountId={HasAccountId}, HasGameAccountId={HasGameAccountId}, HasClientInfo={HasClientInfo}, PayloadBytes={PayloadBytes}",
+                "[Bnet][GameUtilities] ProcessClientRequest received. Token={Token}, ConnectionId={ConnectionId}, Command={Command}, Attributes={Attributes}, SubRegion={SubRegion}, RealmAddress={RealmAddress}, HasAccountId={HasAccountId}, HasGameAccountId={HasGameAccountId}, HasClientInfo={HasClientInfo}, ClientSecretBytes={ClientSecretBytes}, ClientInfoRawBytes={ClientInfoRawBytes}, PayloadBytes={PayloadBytes}",
                 token,
                 context.ConnectionId,
                 requestInfo.Command,
@@ -939,7 +956,25 @@ public sealed class BnetGameUtilitiesHandler : IBnetHandler
                 requestInfo.HasAccountId,
                 requestInfo.HasGameAccountId,
                 requestInfo.HasClientInfo,
+                requestInfo.ClientSecret32?.Length ?? 0,
+                requestInfo.ClientInfoRawBytes,
                 payload.Length);
+
+            if (requestInfo.ClientSecret32 is { Length: 32 })
+            {
+                context.SetValue(BnetContextKeys.ClientSecret32, requestInfo.ClientSecret32);
+            }
+            else if (requestInfo.HasClientInfo)
+            {
+                _logger.LogWarning(
+                    "[Bnet][GameUtilities] Param_ClientInfo present but client secret was not extracted. Token={Token}, ConnectionId={ConnectionId}, Command={Command}, RawBytes={RawBytes}, RawHeadHex={RawHeadHex}, Details={Details}",
+                    token,
+                    context.ConnectionId,
+                    requestInfo.Command,
+                    requestInfo.ClientInfoRawBytes,
+                    requestInfo.ClientInfoRawHeadHex ?? "<none>",
+                    requestInfo.ClientInfoExtractDetails ?? "<none>");
+            }
 
             ReadOnlyMemory<byte> responsePayload = BnetGameUtilitiesPayloadFactory.GetClientResponsePayload(requestInfo.Command);
 
@@ -969,7 +1004,7 @@ public sealed class BnetGameUtilitiesHandler : IBnetHandler
                         requestInfo.RealmListSubRegion,
                         out byte[] realmListBlob,
                         out byte[] characterCountBlob,
-                        clientBuild: 66017))
+                        clientBuild: 66102))
                 {
                     responsePayload = BnetGameUtilitiesPayloadFactory.BuildRealmListResponsePayload(realmListBlob, characterCountBlob);
                 }
@@ -1007,6 +1042,17 @@ public sealed class BnetGameUtilitiesHandler : IBnetHandler
                 RealmData selectedRealm = BnetGameUtilitiesPayloadFactory.SelectRealmForJoin(realms, requestInfo.RealmAddress);
                 if (RealmListPacketBuilder.TryBuildBnetServerAddressesBlob(selectedRealm, out byte[] serverAddressesBlob))
                 {
+                    int accountId = context.TryGetValue(BnetContextKeys.AccountId, out int storedAccountId)
+                        ? storedAccountId
+                        : 0;
+
+                    if (accountId <= 0)
+                    {
+                        _logger.LogWarning(
+                            "[Bnet][GameUtilities] Missing authenticated account id in context while building RealmJoin payload. ConnectionId={ConnectionId}",
+                            context.ConnectionId);
+                    }
+
                     string gameAccountName = context.TryGetValue(BnetContextKeys.GameAccountName, out string storedGameAccountName)
                         && !string.IsNullOrWhiteSpace(storedGameAccountName)
                             ? storedGameAccountName
@@ -1024,12 +1070,61 @@ public sealed class BnetGameUtilitiesHandler : IBnetHandler
                         ? storedClientType
                         : BnetClientVariantResolver.TypeRetail;
 
+                    byte[] joinSecret = RandomNumberGenerator.GetBytes(32);
                     responsePayload = BnetGameUtilitiesPayloadFactory.BuildRealmJoinResponsePayload(
                         serverAddressesBlob,
+                        accountId,
                         gameAccountName,
                         platformType,
                         clientType,
-                        clientArch);
+                        clientArch,
+                        joinSecret);
+
+                    byte[]? clientSecret32 = requestInfo.ClientSecret32 is { Length: 32 }
+                        ? requestInfo.ClientSecret32
+                        : (context.TryGetValue(BnetContextKeys.ClientSecret32, out byte[] storedClientSecret) && storedClientSecret.Length == 32
+                            ? storedClientSecret
+                            : null);
+
+                    if (accountId > 0 && clientSecret32 is { Length: 32 })
+                    {
+                        byte[] keyData64 = new byte[64];
+                        Buffer.BlockCopy(clientSecret32, 0, keyData64, 0, 32);
+                        Buffer.BlockCopy(joinSecret, 0, keyData64, 32, 32);
+
+                        try
+                        {
+                            bool keyUpdated = await _databaseService
+                                .UpsertWorldSessionMaterial(accountId, keyData64, cancellationToken)
+                                .ConfigureAwait(false);
+
+                            _logger.LogInformation(
+                            "[Bnet][GameUtilities] RealmJoin key_data {Status}. Token={Token}, ConnectionId={ConnectionId}, AccountId={AccountId}, KeyDataSha256={KeyDataSha256}",
+                            keyUpdated ? "upserted" : "not-upserted",
+                            token,
+                            context.ConnectionId,
+                            accountId,
+                            Convert.ToHexString(SHA256.HashData(keyData64)));
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(
+                                ex,
+                                "[Bnet][GameUtilities] Failed to upsert RealmJoin key_data. Token={Token}, ConnectionId={ConnectionId}, AccountId={AccountId}",
+                                token,
+                                context.ConnectionId,
+                                accountId);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "[Bnet][GameUtilities] RealmJoin key_data not updated (missing inputs). Token={Token}, ConnectionId={ConnectionId}, AccountId={AccountId}, ClientSecretBytes={ClientSecretBytes}",
+                            token,
+                            context.ConnectionId,
+                            accountId,
+                            clientSecret32?.Length ?? 0);
+                    }
                 }
                 else
                 {
@@ -1698,7 +1793,11 @@ internal readonly record struct BnetGameUtilitiesRequestInfo(
     bool HasGameAccountId,
     bool HasClientInfo,
     string RealmListSubRegion,
-    uint RealmAddress);
+    uint RealmAddress,
+    byte[]? ClientSecret32,
+    int ClientInfoRawBytes,
+    string? ClientInfoRawHeadHex,
+    string? ClientInfoExtractDetails);
 
 internal static class BnetGameUtilitiesPayloadParser
 {
@@ -1710,6 +1809,7 @@ internal static class BnetGameUtilitiesPayloadParser
     private static readonly byte[] CommandRealmJoinTicketRequestPrefix = "Command_RealmJoinTicketRequest_v1"u8.ToArray();
     private static readonly byte[] CommandLastCharPlayedRequestPrefix = "Command_LastCharPlayedRequest_v1"u8.ToArray();
     private static readonly byte[] ParamRealmAddressName = "Param_RealmAddress"u8.ToArray();
+    private static readonly byte[] ParamClientInfoName = "Param_ClientInfo"u8.ToArray();
 
     public static bool TryReadClientRequestInfo(ReadOnlySequence<byte> payload, out BnetGameUtilitiesRequestInfo info)
     {
@@ -1720,6 +1820,10 @@ internal static class BnetGameUtilitiesPayloadParser
         bool hasClientInfo = false;
         string realmListSubRegion = string.Empty;
         uint realmAddress = 0;
+        byte[]? clientSecret32 = null;
+        int clientInfoRawBytes = 0;
+        string? clientInfoRawHeadHex = null;
+        string? clientInfoExtractDetails = null;
 
         if (!TryGetPayloadSpan(payload, out byte[]? rented, out ReadOnlySpan<byte> span))
         {
@@ -1734,7 +1838,18 @@ internal static class BnetGameUtilitiesPayloadParser
             {
                 if (!reader.TryReadFieldHeader(out uint fieldNumber, out ProtobufWireType wireType))
                 {
-                    info = new BnetGameUtilitiesRequestInfo(command, attributeCount, hasAccountId, hasGameAccountId, hasClientInfo, realmListSubRegion, realmAddress);
+                    info = new BnetGameUtilitiesRequestInfo(
+                        command,
+                        attributeCount,
+                        hasAccountId,
+                        hasGameAccountId,
+                        hasClientInfo,
+                        realmListSubRegion,
+                        realmAddress,
+                        clientSecret32,
+                        clientInfoRawBytes,
+                        clientInfoRawHeadHex,
+                        clientInfoExtractDetails);
                     return false;
                 }
 
@@ -1743,7 +1858,18 @@ internal static class BnetGameUtilitiesPayloadParser
                     attributeCount++;
                     if (!reader.TryReadLengthDelimitedSpan(out ReadOnlySpan<byte> attributePayload))
                     {
-                        info = new BnetGameUtilitiesRequestInfo(command, attributeCount, hasAccountId, hasGameAccountId, hasClientInfo, realmListSubRegion, realmAddress);
+                        info = new BnetGameUtilitiesRequestInfo(
+                            command,
+                            attributeCount,
+                            hasAccountId,
+                            hasGameAccountId,
+                            hasClientInfo,
+                            realmListSubRegion,
+                            realmAddress,
+                            clientSecret32,
+                            clientInfoRawBytes,
+                            clientInfoRawHeadHex,
+                            clientInfoExtractDetails);
                         return false;
                     }
 
@@ -1752,7 +1878,8 @@ internal static class BnetGameUtilitiesPayloadParser
                             out ReadOnlySpan<byte> attributeName,
                             out string attributeStringValue,
                             out bool hasUIntValue,
-                            out ulong uintValue))
+                            out ulong uintValue,
+                            out byte[]? blobValue))
                     {
                         GameUtilitiesCommandKind parsed = ParseCommand(attributeName);
                         if (parsed != GameUtilitiesCommandKind.Unknown)
@@ -1772,6 +1899,48 @@ internal static class BnetGameUtilitiesPayloadParser
                         {
                             realmAddress = (uint)uintValue;
                         }
+
+                        if (attributeName.SequenceEqual(ParamClientInfoName))
+                        {
+                            hasClientInfo = true;
+                            if (blobValue is { Length: > 0 })
+                            {
+                                clientInfoRawBytes = blobValue.Length;
+                                clientInfoRawHeadHex = ToHeadHex(blobValue, 64);
+
+                                if (TryExtractClientSecret32(blobValue, out byte[] parsedClientSecret, out string extractDetails))
+                                {
+                                    clientSecret32 = parsedClientSecret;
+                                    clientInfoExtractDetails = extractDetails;
+                                }
+                                else
+                                {
+                                    clientInfoExtractDetails = extractDetails;
+                                }
+                            }
+                            else if (!string.IsNullOrWhiteSpace(attributeStringValue))
+                            {
+                                byte[] utf8 = Encoding.UTF8.GetBytes(attributeStringValue);
+                                clientInfoRawBytes = utf8.Length;
+                                clientInfoRawHeadHex = ToHeadHex(utf8, 64);
+
+                                if (TryExtractClientSecret32(attributeStringValue, out byte[] parsedClientSecret, out string extractDetails))
+                                {
+                                    clientSecret32 = parsedClientSecret;
+                                    clientInfoExtractDetails = extractDetails;
+                                }
+                                else
+                                {
+                                    clientInfoExtractDetails = extractDetails;
+                                }
+                            }
+                            else
+                            {
+                                clientInfoRawBytes = 0;
+                                clientInfoRawHeadHex = string.Empty;
+                                clientInfoExtractDetails = "client-info-empty";
+                            }
+                        }
                     }
 
                     continue;
@@ -1782,7 +1951,18 @@ internal static class BnetGameUtilitiesPayloadParser
                     hasAccountId = true;
                     if (!reader.TrySkipLengthDelimited())
                     {
-                        info = new BnetGameUtilitiesRequestInfo(command, attributeCount, hasAccountId, hasGameAccountId, hasClientInfo, realmListSubRegion, realmAddress);
+                        info = new BnetGameUtilitiesRequestInfo(
+                            command,
+                            attributeCount,
+                            hasAccountId,
+                            hasGameAccountId,
+                            hasClientInfo,
+                            realmListSubRegion,
+                            realmAddress,
+                            clientSecret32,
+                            clientInfoRawBytes,
+                            clientInfoRawHeadHex,
+                            clientInfoExtractDetails);
                         return false;
                     }
 
@@ -1794,7 +1974,18 @@ internal static class BnetGameUtilitiesPayloadParser
                     hasGameAccountId = true;
                     if (!reader.TrySkipLengthDelimited())
                     {
-                        info = new BnetGameUtilitiesRequestInfo(command, attributeCount, hasAccountId, hasGameAccountId, hasClientInfo, realmListSubRegion, realmAddress);
+                        info = new BnetGameUtilitiesRequestInfo(
+                            command,
+                            attributeCount,
+                            hasAccountId,
+                            hasGameAccountId,
+                            hasClientInfo,
+                            realmListSubRegion,
+                            realmAddress,
+                            clientSecret32,
+                            clientInfoRawBytes,
+                            clientInfoRawHeadHex,
+                            clientInfoExtractDetails);
                         return false;
                     }
 
@@ -1806,7 +1997,18 @@ internal static class BnetGameUtilitiesPayloadParser
                     hasClientInfo = true;
                     if (!reader.TrySkipLengthDelimited())
                     {
-                        info = new BnetGameUtilitiesRequestInfo(command, attributeCount, hasAccountId, hasGameAccountId, hasClientInfo, realmListSubRegion, realmAddress);
+                        info = new BnetGameUtilitiesRequestInfo(
+                            command,
+                            attributeCount,
+                            hasAccountId,
+                            hasGameAccountId,
+                            hasClientInfo,
+                            realmListSubRegion,
+                            realmAddress,
+                            clientSecret32,
+                            clientInfoRawBytes,
+                            clientInfoRawHeadHex,
+                            clientInfoExtractDetails);
                         return false;
                     }
 
@@ -1815,12 +2017,34 @@ internal static class BnetGameUtilitiesPayloadParser
 
                 if (!reader.TrySkipField(wireType))
                 {
-                    info = new BnetGameUtilitiesRequestInfo(command, attributeCount, hasAccountId, hasGameAccountId, hasClientInfo, realmListSubRegion, realmAddress);
+                    info = new BnetGameUtilitiesRequestInfo(
+                        command,
+                        attributeCount,
+                        hasAccountId,
+                        hasGameAccountId,
+                        hasClientInfo,
+                        realmListSubRegion,
+                        realmAddress,
+                        clientSecret32,
+                        clientInfoRawBytes,
+                        clientInfoRawHeadHex,
+                        clientInfoExtractDetails);
                     return false;
                 }
             }
 
-            info = new BnetGameUtilitiesRequestInfo(command, attributeCount, hasAccountId, hasGameAccountId, hasClientInfo, realmListSubRegion, realmAddress);
+            info = new BnetGameUtilitiesRequestInfo(
+                command,
+                attributeCount,
+                hasAccountId,
+                hasGameAccountId,
+                hasClientInfo,
+                realmListSubRegion,
+                realmAddress,
+                clientSecret32,
+                clientInfoRawBytes,
+                clientInfoRawHeadHex,
+                clientInfoExtractDetails);
             return true;
         }
         finally
@@ -1926,12 +2150,14 @@ internal static class BnetGameUtilitiesPayloadParser
         out ReadOnlySpan<byte> attributeName,
         out string stringValue,
         out bool hasUIntValue,
-        out ulong uintValue)
+        out ulong uintValue,
+        out byte[]? blobValue)
     {
         attributeName = default;
         stringValue = string.Empty;
         hasUIntValue = false;
         uintValue = 0;
+        blobValue = null;
         bool hasName = false;
 
         var reader = new ProtobufVarintReader(attributePayload);
@@ -1960,7 +2186,7 @@ internal static class BnetGameUtilitiesPayloadParser
                     return false;
                 }
 
-                _ = TryReadVariantValues(variantPayload, out stringValue, out hasUIntValue, out uintValue);
+                _ = TryReadVariantValues(variantPayload, out stringValue, out hasUIntValue, out uintValue, out blobValue);
                 continue;
             }
 
@@ -1977,11 +2203,13 @@ internal static class BnetGameUtilitiesPayloadParser
         ReadOnlySpan<byte> variantPayload,
         out string stringValue,
         out bool hasUIntValue,
-        out ulong uintValue)
+        out ulong uintValue,
+        out byte[]? blobValue)
     {
         stringValue = string.Empty;
         hasUIntValue = false;
         uintValue = 0;
+        blobValue = null;
         bool hasAny = false;
 
         var reader = new ProtobufVarintReader(variantPayload);
@@ -2016,6 +2244,31 @@ internal static class BnetGameUtilitiesPayloadParser
                 continue;
             }
 
+            if (fieldNumber == 6 && wireType == ProtobufWireType.LengthDelimited)
+            {
+                if (!reader.TryReadLengthDelimitedSpan(out ReadOnlySpan<byte> blobPayload))
+                {
+                    return false;
+                }
+
+                blobValue = blobPayload.ToArray();
+                hasAny = true;
+                continue;
+            }
+
+            if (wireType == ProtobufWireType.LengthDelimited)
+            {
+                if (!reader.TryReadLengthDelimitedSpan(out ReadOnlySpan<byte> unknownPayload))
+                {
+                    return false;
+                }
+
+                // Keep first unknown length-delimited variant payload as fallback source.
+                blobValue ??= unknownPayload.ToArray();
+                hasAny = true;
+                continue;
+            }
+
             if (!reader.TrySkipField(wireType))
             {
                 return false;
@@ -2023,6 +2276,704 @@ internal static class BnetGameUtilitiesPayloadParser
         }
 
         return hasAny;
+    }
+
+    private static bool TryExtractClientSecret32(ReadOnlySpan<byte> clientInfoBlob, out byte[] clientSecret32, out string details)
+    {
+        clientSecret32 = Array.Empty<byte>();
+        details = "blob-empty";
+        if (clientInfoBlob.IsEmpty)
+        {
+            return false;
+        }
+
+        if (clientInfoBlob.Length == 32 && IsLikelySecretBytes(clientInfoBlob))
+        {
+            clientSecret32 = clientInfoBlob.ToArray();
+            details = "raw32";
+            return true;
+        }
+
+        string textDetails;
+        if (TryExtractClientSecret32(Encoding.UTF8.GetString(clientInfoBlob), out clientSecret32, out textDetails))
+        {
+            details = $"text:{textDetails}";
+            return true;
+        }
+
+        if (TryExtractClientSecret32FromBinaryProtobuf(clientInfoBlob, out clientSecret32, out string protobufDetails))
+        {
+            details = protobufDetails;
+            return true;
+        }
+
+        details = $"extract-failed:text={textDetails};protobuf={protobufDetails}";
+        return false;
+    }
+
+    private static bool TryExtractClientSecret32(string raw, out byte[] clientSecret32, out string details)
+    {
+        clientSecret32 = Array.Empty<byte>();
+        details = "text-empty";
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        string trimmed = raw.Trim();
+        if (TryDecodeBase64(trimmed, out byte[] base64Bytes) && base64Bytes.Length == 32)
+        {
+            clientSecret32 = base64Bytes;
+            details = "raw-base64-32";
+            return true;
+        }
+
+        if (TryDecodeHex(trimmed, out byte[] hexBytes) && hexBytes.Length == 32)
+        {
+            clientSecret32 = hexBytes;
+            details = "raw-hex-32";
+            return true;
+        }
+
+        byte[] utf8Raw = Encoding.UTF8.GetBytes(trimmed);
+        if (utf8Raw.Length == 32)
+        {
+            clientSecret32 = utf8Raw;
+            details = "raw-utf8-32";
+            return true;
+        }
+
+        int prefixSeparator = raw.IndexOf(':');
+        string jsonPayload = prefixSeparator >= 0 && prefixSeparator + 1 < raw.Length
+            ? raw[(prefixSeparator + 1)..]
+            : raw;
+
+        try
+        {
+            using var document = JsonDocument.Parse(jsonPayload);
+            if (TryFindJsonPropertyCaseInsensitive(document.RootElement, "secret", out JsonElement secretElement))
+            {
+                bool decoded = TryDecodeSecretElement(secretElement, out clientSecret32);
+                details = decoded ? "json-secret-decoded" : "json-secret-invalid";
+                if (decoded)
+                {
+                    return true;
+                }
+            }
+
+            if (TryFindAnyJsonSecretCandidate(document.RootElement, out clientSecret32, out string candidatePath, out string candidateKind, out string candidateMeta))
+            {
+                details = $"json-candidate:{candidateKind}@{candidatePath}:{candidateMeta}";
+                return true;
+            }
+
+            details = "json-no-32-byte-candidate";
+            return false;
+        }
+        catch (JsonException)
+        {
+            if (TryExtractFirstJsonObject(jsonPayload, out string isolatedJson))
+            {
+                try
+                {
+                    using var isolated = JsonDocument.Parse(isolatedJson);
+
+                    if (TryFindJsonPropertyCaseInsensitive(isolated.RootElement, "secret", out JsonElement isolatedSecret))
+                    {
+                        bool decoded = TryDecodeSecretElement(isolatedSecret, out clientSecret32);
+                        details = decoded ? "json-isolated-secret-decoded" : "json-isolated-secret-invalid";
+                        if (decoded)
+                        {
+                            return true;
+                        }
+                    }
+
+                    if (TryFindAnyJsonSecretCandidate(isolated.RootElement, out clientSecret32, out string candidatePath, out string candidateKind, out string candidateMeta))
+                    {
+                        details = $"json-isolated-candidate:{candidateKind}@{candidatePath}:{candidateMeta}";
+                        return true;
+                    }
+
+                    details = "json-isolated-no-32-byte-candidate";
+                    return false;
+                }
+                catch (JsonException)
+                {
+                    details = "json-parse-failed";
+                    return false;
+                }
+            }
+
+            details = "json-parse-failed";
+            return false;
+        }
+    }
+
+    private static bool TryExtractFirstJsonObject(string text, out string jsonObject)
+    {
+        jsonObject = string.Empty;
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        int start = text.IndexOf('{');
+        if (start < 0 || start >= text.Length)
+        {
+            return false;
+        }
+
+        int depth = 0;
+        bool inString = false;
+        bool escape = false;
+
+        for (int i = start; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (inString)
+            {
+                if (escape)
+                {
+                    escape = false;
+                    continue;
+                }
+
+                if (c == '\\')
+                {
+                    escape = true;
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    inString = false;
+                }
+
+                continue;
+            }
+
+            if (c == '"')
+            {
+                inString = true;
+                continue;
+            }
+
+            if (c == '{')
+            {
+                depth++;
+                continue;
+            }
+
+            if (c == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    jsonObject = text.Substring(start, i - start + 1);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryExtractClientSecret32FromBinaryProtobuf(
+        ReadOnlySpan<byte> payload,
+        out byte[] clientSecret32,
+        out string details)
+    {
+        clientSecret32 = Array.Empty<byte>();
+        details = "protobuf-no-candidate";
+        if (payload.IsEmpty)
+        {
+            details = "protobuf-empty";
+            return false;
+        }
+
+        var queue = new Queue<(byte[] Data, string Path, int Depth)>();
+        queue.Enqueue((payload.ToArray(), "root", 0));
+
+        byte[]? bestCandidate = null;
+        string bestPath = string.Empty;
+        int bestScore = int.MinValue;
+        int secondScore = int.MinValue;
+        int candidateCount = 0;
+
+        while (queue.Count > 0)
+        {
+            (byte[] data, string path, int depth) = queue.Dequeue();
+            if (depth > 5 || data.Length == 0)
+            {
+                continue;
+            }
+
+            var reader = new ProtobufVarintReader(data);
+            while (!reader.End)
+            {
+                if (!reader.TryReadFieldHeader(out uint fieldNumber, out ProtobufWireType wireType))
+                {
+                    break;
+                }
+
+                if (wireType == ProtobufWireType.LengthDelimited)
+                {
+                    if (!reader.TryReadLengthDelimitedSpan(out ReadOnlySpan<byte> fieldPayload))
+                    {
+                        break;
+                    }
+
+                    string fieldPath = $"{path}/{fieldNumber}";
+
+                    if (fieldPayload.Length == 32 && IsLikelySecretBytes(fieldPayload))
+                    {
+                        int score = ScoreSecretCandidate(fieldPayload, depth, fieldNumber);
+                        candidateCount++;
+                        if (score > bestScore)
+                        {
+                            secondScore = bestScore;
+                            bestScore = score;
+                            bestCandidate = fieldPayload.ToArray();
+                            bestPath = fieldPath;
+                        }
+                        else if (score > secondScore)
+                        {
+                            secondScore = score;
+                        }
+                    }
+
+                    if (depth < 5 &&
+                        fieldPayload.Length >= 2 &&
+                        fieldPayload.Length <= 1024 &&
+                        LooksLikeProtobufMessage(fieldPayload))
+                    {
+                        queue.Enqueue((fieldPayload.ToArray(), fieldPath, depth + 1));
+                    }
+
+                    continue;
+                }
+
+                if (!reader.TrySkipField(wireType))
+                {
+                    break;
+                }
+            }
+        }
+
+        if (bestCandidate is null)
+        {
+            details = "protobuf-no-candidate";
+            return false;
+        }
+
+        if (candidateCount > 1 && (bestScore - secondScore) < 2)
+        {
+            details = $"protobuf-ambiguous:candidates={candidateCount},bestScore={bestScore},secondScore={secondScore},bestPath={bestPath}";
+            return false;
+        }
+
+        clientSecret32 = bestCandidate;
+        details = $"protobuf-candidate:candidates={candidateCount},path={bestPath},score={bestScore}";
+        return true;
+    }
+
+    private static bool LooksLikeProtobufMessage(ReadOnlySpan<byte> payload)
+    {
+        var reader = new ProtobufVarintReader(payload);
+        int fields = 0;
+        while (!reader.End && fields < 8)
+        {
+            if (!reader.TryReadFieldHeader(out _, out ProtobufWireType wireType))
+            {
+                return false;
+            }
+
+            fields++;
+            if (!reader.TrySkipField(wireType))
+            {
+                return false;
+            }
+        }
+
+        return fields > 0;
+    }
+
+    private static bool IsLikelySecretBytes(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length != 32)
+        {
+            return false;
+        }
+
+        bool allZero = true;
+        int printable = 0;
+        Span<byte> seen = stackalloc byte[256];
+        int unique = 0;
+
+        foreach (byte b in bytes)
+        {
+            if (b != 0)
+            {
+                allZero = false;
+            }
+
+            if (b >= 0x20 && b <= 0x7E)
+            {
+                printable++;
+            }
+
+            if (seen[b] == 0)
+            {
+                seen[b] = 1;
+                unique++;
+            }
+        }
+
+        if (allZero)
+        {
+            return false;
+        }
+
+        if (unique < 10)
+        {
+            return false;
+        }
+
+        // Reject likely plain-text tokens.
+        return printable < 28;
+    }
+
+    private static int ScoreSecretCandidate(ReadOnlySpan<byte> bytes, int depth, uint fieldNumber)
+    {
+        int printable = 0;
+        Span<byte> seen = stackalloc byte[256];
+        int unique = 0;
+
+        foreach (byte b in bytes)
+        {
+            if (b >= 0x20 && b <= 0x7E)
+            {
+                printable++;
+            }
+
+            if (seen[b] == 0)
+            {
+                seen[b] = 1;
+                unique++;
+            }
+        }
+
+        int score = unique;
+        score += (32 - printable);
+        score += depth <= 2 ? 6 : 0;
+        score += fieldNumber <= 4 ? 4 : 0;
+        return score;
+    }
+
+    private static bool TryFindAnyJsonSecretCandidate(
+        JsonElement root,
+        out byte[] clientSecret32,
+        out string candidatePath,
+        out string candidateKind,
+        out string candidateMeta)
+    {
+        clientSecret32 = Array.Empty<byte>();
+        candidatePath = "$";
+        candidateKind = "none";
+        candidateMeta = "none";
+
+        var candidates = new List<(int Score, byte[] Bytes, string Path, string Kind, string Meta)>(8);
+        CollectJsonSecretCandidates(root, "$", string.Empty, candidates);
+
+        if (candidates.Count == 0)
+        {
+            return false;
+        }
+
+        candidates.Sort(static (a, b) => b.Score.CompareTo(a.Score));
+        var best = candidates[0];
+        if (candidates.Count > 1 && (best.Score - candidates[1].Score) <= 0)
+        {
+            candidateMeta = $"ambiguous:best={best.Score},second={candidates[1].Score},count={candidates.Count}";
+            return false;
+        }
+
+        clientSecret32 = best.Bytes;
+        candidatePath = best.Path;
+        candidateKind = best.Kind;
+        candidateMeta = $"score={best.Score}";
+        return true;
+    }
+
+    private static void CollectJsonSecretCandidates(
+        JsonElement element,
+        string path,
+        string propertyName,
+        List<(int Score, byte[] Bytes, string Path, string Kind, string Meta)> candidates)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+            {
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    string childPath = $"{path}.{property.Name}";
+                    CollectJsonSecretCandidates(property.Value, childPath, property.Name, candidates);
+                }
+
+                break;
+            }
+            case JsonValueKind.Array:
+            {
+                if (TryDecodeSecretElement(element, out byte[] arraySecret) && IsLikelySecretBytes(arraySecret))
+                {
+                    int score = ScoreJsonCandidate(arraySecret, propertyName, path, decodeKind: "json-array32");
+                    candidates.Add((score, arraySecret, path, "json-array32", $"property={propertyName}"));
+                }
+
+                int index = 0;
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    CollectJsonSecretCandidates(item, $"{path}[{index}]", propertyName, candidates);
+                    index++;
+                }
+
+                break;
+            }
+            case JsonValueKind.String:
+            {
+                string text = element.GetString() ?? string.Empty;
+                if (TryDecodePotentialSecretString(text, out byte[] decoded, out string decodeKind) &&
+                    IsLikelySecretBytes(decoded))
+                {
+                    int score = ScoreJsonCandidate(decoded, propertyName, path, decodeKind);
+                    candidates.Add((score, decoded, path, decodeKind, $"property={propertyName}"));
+                }
+
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    private static bool TryDecodePotentialSecretString(string text, out byte[] data, out string decodeKind)
+    {
+        data = Array.Empty<byte>();
+        decodeKind = "none";
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        string trimmed = text.Trim();
+        if (TryDecodeBase64(trimmed, out byte[] base64Bytes) && base64Bytes.Length == 32)
+        {
+            data = base64Bytes;
+            decodeKind = "json-base64";
+            return true;
+        }
+
+        if (TryDecodeHex(trimmed, out byte[] hexBytes) && hexBytes.Length == 32)
+        {
+            data = hexBytes;
+            decodeKind = "json-hex";
+            return true;
+        }
+
+        byte[] utf8 = Encoding.UTF8.GetBytes(trimmed);
+        if (utf8.Length == 32)
+        {
+            data = utf8;
+            decodeKind = "json-utf8-32";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static int ScoreJsonCandidate(ReadOnlySpan<byte> bytes, string propertyName, string path, string decodeKind)
+    {
+        int score = 0;
+        score += ScoreSecretCandidate(bytes, depth: 0, fieldNumber: 1);
+
+        string p = propertyName.ToLowerInvariant();
+        string full = path.ToLowerInvariant();
+        if (p.Contains("secret") || full.Contains("secret"))
+        {
+            score += 40;
+        }
+
+        if (p.Contains("client") || full.Contains("client"))
+        {
+            score += 10;
+        }
+
+        if (p.Contains("join") || full.Contains("join"))
+        {
+            score += 8;
+        }
+
+        if (p.Contains("key") || full.Contains("key"))
+        {
+            score += 8;
+        }
+
+        if (decodeKind == "json-base64" || decodeKind == "json-hex")
+        {
+            score += 6;
+        }
+
+        return score;
+    }
+
+    private static string ToHeadHex(ReadOnlySpan<byte> bytes, int maxBytes)
+    {
+        if (bytes.IsEmpty || maxBytes <= 0)
+        {
+            return string.Empty;
+        }
+
+        int take = Math.Min(bytes.Length, maxBytes);
+        return Convert.ToHexString(bytes[..take]);
+    }
+
+    private static bool TryFindJsonPropertyCaseInsensitive(JsonElement root, string propertyName, out JsonElement value)
+    {
+        value = default;
+
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in root.EnumerateObject())
+            {
+                if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+
+                if (TryFindJsonPropertyCaseInsensitive(property.Value, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in root.EnumerateArray())
+            {
+                if (TryFindJsonPropertyCaseInsensitive(item, propertyName, out value))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryDecodeSecretElement(JsonElement secretElement, out byte[] clientSecret32)
+    {
+        clientSecret32 = Array.Empty<byte>();
+
+        switch (secretElement.ValueKind)
+        {
+            case JsonValueKind.String:
+            {
+                string secretText = secretElement.GetString() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(secretText))
+                {
+                    return false;
+                }
+
+                if (TryDecodeBase64(secretText, out byte[] base64Bytes) && base64Bytes.Length == 32)
+                {
+                    clientSecret32 = base64Bytes;
+                    return true;
+                }
+
+                if (TryDecodeHex(secretText, out byte[] hexBytes) && hexBytes.Length == 32)
+                {
+                    clientSecret32 = hexBytes;
+                    return true;
+                }
+
+                byte[] utf8Bytes = Encoding.UTF8.GetBytes(secretText);
+                if (utf8Bytes.Length == 32)
+                {
+                    clientSecret32 = utf8Bytes;
+                    return true;
+                }
+
+                return false;
+            }
+            case JsonValueKind.Array:
+            {
+                Span<byte> bytes = stackalloc byte[32];
+                int index = 0;
+                foreach (JsonElement item in secretElement.EnumerateArray())
+                {
+                    if (index >= bytes.Length || item.ValueKind != JsonValueKind.Number || !item.TryGetByte(out byte value))
+                    {
+                        return false;
+                    }
+
+                    bytes[index++] = value;
+                }
+
+                if (index != 32)
+                {
+                    return false;
+                }
+
+                clientSecret32 = bytes.ToArray();
+                return true;
+            }
+            case JsonValueKind.Object:
+            {
+                if (TryFindJsonPropertyCaseInsensitive(secretElement, "value", out JsonElement nested))
+                {
+                    return TryDecodeSecretElement(nested, out clientSecret32);
+                }
+
+                return false;
+            }
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryDecodeBase64(string text, out byte[] data)
+    {
+        data = Array.Empty<byte>();
+        try
+        {
+            data = Convert.FromBase64String(text);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryDecodeHex(string text, out byte[] data)
+    {
+        data = Array.Empty<byte>();
+        if (text.Length % 2 != 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            data = Convert.FromHexString(text);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 
     private static GameUtilitiesCommandKind ParseCommand(ReadOnlySpan<byte> attributeName)
@@ -2125,7 +3076,7 @@ internal static class BnetGameUtilitiesPayloadFactory
             Timezone = 1,
             AllowedSecurityLevel = 0,
             Population = 0.5f,
-            Gamebuild = 66017u,
+            Gamebuild = 66102u,
             Region = 1,
             Battlegroup = 1
         }
@@ -2187,17 +3138,18 @@ internal static class BnetGameUtilitiesPayloadFactory
 
     public static ReadOnlyMemory<byte> BuildRealmJoinResponsePayload(
         ReadOnlySpan<byte> serverAddressesPayload,
+        int accountId,
         string gameAccountName,
         uint platformType,
         uint clientType,
-        uint clientArch)
+        uint clientArch,
+        ReadOnlySpan<byte> joinSecret)
     {
         // Trinity-compatible JoinRealm response:
         // Param_RealmJoinTicket = JSON serialized RealmJoinTicket
         // Param_ServerAddresses = compressed JSONRealmListServerIPAddresses blob
         // Param_JoinSecret = 32-byte server secret
-        byte[] joinTicket = BuildRealmJoinTicketJson(gameAccountName, platformType, clientType, clientArch);
-        byte[] joinSecret = RandomNumberGenerator.GetBytes(32);
+        byte[] joinTicket = BuildRealmJoinTicketJson(accountId, gameAccountName, platformType, clientType, clientArch);
 
         var responsePayload = new ArrayBufferWriter<byte>(Math.Max(160, serverAddressesPayload.Length + 160));
         var responseWriter = new ProtobufWriter(responsePayload);
@@ -2275,16 +3227,19 @@ internal static class BnetGameUtilitiesPayloadFactory
     }
 
     private static byte[] BuildRealmJoinTicketJson(
+        int accountId,
         string gameAccountName,
         uint platformType,
         uint clientType,
         uint clientArch)
     {
         string account = string.IsNullOrWhiteSpace(gameAccountName) ? "AIMAYA" : gameAccountName.Trim();
+        int normalizedAccountId = accountId > 0 ? accountId : 0;
 
         var buffer = new ArrayBufferWriter<byte>(Math.Max(96, account.Length + 80));
         using var writer = new Utf8JsonWriter(buffer);
         writer.WriteStartObject();
+        writer.WriteNumber("accountId", normalizedAccountId);
         writer.WriteString("gameAccount", account);
         writer.WriteNumber("platform", platformType);
         writer.WriteNumber("type", clientType);
@@ -2610,7 +3565,7 @@ public sealed class BattleNetChallengeResponseHandler : IAuthHandler
         }
 
         bool updated = await _databaseService
-            .UpdateSessionKey(material.AccountId, proofResult.SessionKey, cancellationToken)
+            .UpdateSessionKey(material.AccountId, proofResult.SessionKey, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         if (!updated)

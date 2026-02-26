@@ -6,7 +6,8 @@ namespace Adapter.AuthGateway.Database;
 public interface IDatabaseService
 {
     ValueTask<AccountData?> GetAccountData(string username, CancellationToken cancellationToken = default);
-    ValueTask<bool> UpdateSessionKey(int accountId, byte[] newKey, CancellationToken cancellationToken = default);
+    ValueTask<bool> UpdateSessionKey(int accountId, byte[] newKey, byte[]? bnetKeyData = null, CancellationToken cancellationToken = default);
+    ValueTask<bool> UpsertWorldSessionMaterial(int accountId, byte[] bnetKeyData, CancellationToken cancellationToken = default);
     ValueTask<IReadOnlyList<RealmData>> GetWorldList(CancellationToken cancellationToken = default);
 }
 
@@ -16,7 +17,7 @@ public sealed class DatabaseService : IDatabaseService
 
     private const string GetAccountSql = """
         SELECT
-            id AS Id,
+            CAST(id AS SIGNED) AS Id,
             username AS Username,
             salt AS Salt,
             verifier AS Verifier,
@@ -28,8 +29,25 @@ public sealed class DatabaseService : IDatabaseService
 
     private const string UpdateSessionKeySql = """
         UPDATE account
-        SET session_key = CAST(@sessionKey AS BINARY(40))
+        SET session_key = CAST(@sessionKey AS BINARY(40)),
+            os = 'Win'
         WHERE id = @accountId;
+        """;
+
+    private const string EnsureWorldSessionMaterialSql = """
+        CREATE TABLE IF NOT EXISTS adapter_world_session_material (
+            account_id INT UNSIGNED NOT NULL PRIMARY KEY,
+            key_data VARBINARY(64) NOT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        """;
+
+    private const string UpsertWorldSessionMaterialSql = """
+        INSERT INTO adapter_world_session_material (account_id, key_data)
+        VALUES (@accountId, @keyData)
+        ON DUPLICATE KEY UPDATE
+            key_data = VALUES(key_data),
+            updated_at = CURRENT_TIMESTAMP;
         """;
 
     private const string GetWorldListSql = """
@@ -54,6 +72,7 @@ public sealed class DatabaseService : IDatabaseService
         """;
 
     private readonly MySqlDataSource _dataSource;
+    private int _worldSessionMaterialEnsured;
 
     public DatabaseService(MySqlDataSource dataSource)
     {
@@ -77,7 +96,7 @@ public sealed class DatabaseService : IDatabaseService
         return await connection.QuerySingleOrDefaultAsync<AccountData>(command).ConfigureAwait(false);
     }
 
-    public async ValueTask<bool> UpdateSessionKey(int accountId, byte[] newKey, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> UpdateSessionKey(int accountId, byte[] newKey, byte[]? bnetKeyData = null, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(accountId);
         ArgumentNullException.ThrowIfNull(newKey);
@@ -96,7 +115,52 @@ public sealed class DatabaseService : IDatabaseService
             cancellationToken: cancellationToken);
 
         var affected = await connection.ExecuteAsync(command).ConfigureAwait(false);
-        return affected == 1;
+        if (affected != 1)
+        {
+            return false;
+        }
+
+        if (bnetKeyData is null)
+        {
+            return true;
+        }
+
+        if (bnetKeyData.Length != 64)
+        {
+            throw new ArgumentException("Battle.net key data must be exactly 64 bytes.", nameof(bnetKeyData));
+        }
+
+        await EnsureWorldSessionMaterialTableAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        var upsert = new CommandDefinition(
+            commandText: UpsertWorldSessionMaterialSql,
+            parameters: new { accountId, keyData = bnetKeyData },
+            cancellationToken: cancellationToken);
+
+        int keyRows = await connection.ExecuteAsync(upsert).ConfigureAwait(false);
+        return keyRows >= 1;
+    }
+
+    public async ValueTask<bool> UpsertWorldSessionMaterial(int accountId, byte[] bnetKeyData, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(accountId);
+        ArgumentNullException.ThrowIfNull(bnetKeyData);
+
+        if (bnetKeyData.Length != 64)
+        {
+            throw new ArgumentException("Battle.net key data must be exactly 64 bytes.", nameof(bnetKeyData));
+        }
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureWorldSessionMaterialTableAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        var upsert = new CommandDefinition(
+            commandText: UpsertWorldSessionMaterialSql,
+            parameters: new { accountId, keyData = bnetKeyData },
+            cancellationToken: cancellationToken);
+
+        int keyRows = await connection.ExecuteAsync(upsert).ConfigureAwait(false);
+        return keyRows >= 1;
     }
 
     public async ValueTask<IReadOnlyList<RealmData>> GetWorldList(CancellationToken cancellationToken = default)
@@ -109,14 +173,30 @@ public sealed class DatabaseService : IDatabaseService
         var rows = await connection.QueryAsync<RealmData>(command).ConfigureAwait(false);
         return rows.AsList();
     }
+
+    private async ValueTask EnsureWorldSessionMaterialTableAsync(MySqlConnection connection, CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _worldSessionMaterialEnsured) == 1)
+        {
+            return;
+        }
+
+        var command = new CommandDefinition(
+            commandText: EnsureWorldSessionMaterialSql,
+            cancellationToken: cancellationToken);
+        await connection.ExecuteAsync(command).ConfigureAwait(false);
+        Volatile.Write(ref _worldSessionMaterialEnsured, 1);
+    }
 }
 
-public sealed record AccountData(
-    int Id,
-    string Username,
-    byte[] Salt,
-    byte[] Verifier,
-    byte[]? SessionKey);
+public sealed class AccountData
+{
+    public int Id { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public byte[] Salt { get; set; } = Array.Empty<byte>();
+    public byte[] Verifier { get; set; } = Array.Empty<byte>();
+    public byte[]? SessionKey { get; set; }
+}
 
 public sealed class RealmData
 {
