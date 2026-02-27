@@ -47,7 +47,7 @@ internal static class RetailGluePayloadBuilders
     public static byte[] BuildAvailableHotfixesFrame(uint opcode, uint acoreRealmId)
     {
         var payload = new BitPackedBufferWriter(initialCapacity: 8);
-        payload.WriteInt32LE(unchecked((int)BuildRetailVirtualRealmAddress(acoreRealmId))); // VirtualRealmAddress
+        payload.WriteInt32LE(unchecked((int)WorldGatewayProtocolConstants.BuildRetailVirtualRealmAddress(acoreRealmId))); // VirtualRealmAddress
         payload.WriteUInt32LE(0); // Hotfixes count
         return RetailEnvelopeBuilder.BuildRetailWorldFrame(opcode, payload.WrittenSpan);
     }
@@ -179,9 +179,4 @@ internal static class RetailGluePayloadBuilders
         return RetailEnvelopeBuilder.BuildRetailWorldFrame(opcode, payload.WrittenSpan);
     }
 
-    private static uint BuildRetailVirtualRealmAddress(uint acoreRealmId)
-    {
-        uint realmId = acoreRealmId != 0 ? acoreRealmId : 1u;
-        return (1u << 24) | (1u << 16) | (realmId & 0xFFFF);
-    }
 }

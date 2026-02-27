@@ -98,7 +98,7 @@ internal static class AuthResponseFrameBuilder
         if (hasSuccessInfo)
         {
             // AuthSuccessInfo (TrinityCore serialization order)
-            uint virtualRealmAddress = 0x0101_0001; // Region=1, Battlegroup=1, Realm=1
+            uint virtualRealmAddress = WorldGatewayProtocolConstants.BuildRetailVirtualRealmAddress(1u);
             long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
             payload.WriteUInt32LE(virtualRealmAddress); // VirtualRealmAddress
@@ -182,8 +182,7 @@ internal static class AuthResponseFrameBuilder
     {
         uint billingTimeRemaining = acPayload.Length >= 5 ? BinaryPrimitives.ReadUInt32LittleEndian(acPayload.Slice(1, 4)) : 0u;
         uint billingTimeRested = acPayload.Length >= 10 ? BinaryPrimitives.ReadUInt32LittleEndian(acPayload.Slice(6, 4)) : 0u;
-        uint realmId = acoreRealmId != 0 ? acoreRealmId : 1u;
-        uint virtualRealmAddress = (1u << 24) | (1u << 16) | (realmId & 0xFFFF);
+        uint virtualRealmAddress = WorldGatewayProtocolConstants.BuildRetailVirtualRealmAddress(acoreRealmId);
         const byte ExpansionTww = 10;
         const byte ExpansionWotlk = 2;
         const string RealmName = "AIMAYA";

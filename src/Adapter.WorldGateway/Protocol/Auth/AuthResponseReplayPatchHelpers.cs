@@ -42,7 +42,7 @@ internal static class AuthResponseReplayPatchHelpers
         }
 
         patchedPayload = payload.ToArray();
-        uint runtimeRealmAddress = BuildRuntimeVirtualRealmAddress(acoreRealmId);
+        uint runtimeRealmAddress = WorldGatewayProtocolConstants.BuildRetailVirtualRealmAddress(acoreRealmId);
         BinaryPrimitives.WriteUInt32LittleEndian(
             patchedPayload.AsSpan(TopVirtualRealmAddressOffset, sizeof(uint)),
             runtimeRealmAddress);
@@ -205,7 +205,7 @@ internal static class AuthResponseReplayPatchHelpers
         }
 
         patchedPayload = payload.ToArray();
-        uint runtimeRealmAddress = BuildRuntimeVirtualRealmAddress(acoreRealmId);
+        uint runtimeRealmAddress = WorldGatewayProtocolConstants.BuildRetailVirtualRealmAddress(acoreRealmId);
         BinaryPrimitives.WriteUInt32LittleEndian(
             patchedPayload.AsSpan(cursor, sizeof(uint)),
             runtimeRealmAddress);
@@ -541,9 +541,4 @@ internal static class AuthResponseReplayPatchHelpers
         };
     }
 
-    private static uint BuildRuntimeVirtualRealmAddress(uint acoreRealmId)
-    {
-        uint realmId = acoreRealmId != 0 ? acoreRealmId : 1u;
-        return (1u << 24) | (1u << 16) | (realmId & 0xFFFFu);
-    }
 }

@@ -14,4 +14,10 @@ internal static class WorldGatewayProtocolConstants
     internal const string RetailWorldPacketCryptDefaultClientNonceMagic = "clnt";
     internal const uint RetailWorldPacketCryptServerNonceMagicUInt32 = 0x52565253; // "SRVR"
     internal const uint RetailWorldPacketCryptClientNonceMagicUInt32 = 0x544E4C43; // "CLNT"
+
+    internal static uint BuildRetailVirtualRealmAddress(uint acoreRealmId)
+    {
+        uint realmId = acoreRealmId != 0 ? acoreRealmId : 1u;
+        return (1u << 24) | (1u << 16) | (realmId & 0xFFFFu);
+    }
 }
