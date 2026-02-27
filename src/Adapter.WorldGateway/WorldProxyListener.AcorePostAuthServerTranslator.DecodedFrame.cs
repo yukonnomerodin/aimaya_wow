@@ -1,6 +1,5 @@
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
 
 namespace Adapter.WorldGateway;
 
@@ -29,17 +28,7 @@ public sealed partial class WorldProxyListener
                     return true;
                 }
 
-                if (!TryBuildMappedAuthResponseFrame(payload, out byte[] mapped, out bool authResponseAlreadyCompressed, out error))
-                {
-                    return false;
-                }
-
-                if (!TryApplyAuthResponseCompressionIfNeeded(mapped, authResponseAlreadyCompressed, out mapped, out error))
-                {
-                    return false;
-                }
-
-                return TryStageAndFlushAuthBootstrap(mapped, output, ref bytesWritten, out error);
+                return TryTranslateAuthResponseDuringPreAuth(payload, output, ref bytesWritten, out error);
             }
 
             return TryTranslateAfterAuth(opcode, payload, output, out bytesWritten, out error);
