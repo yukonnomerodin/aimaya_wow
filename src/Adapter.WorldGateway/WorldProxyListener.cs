@@ -107,12 +107,8 @@ public sealed partial class WorldProxyListener : BackgroundService
     private readonly string? _probeBattleNetConnectionStatusPayloadParseError;
     private readonly string? _probeBattleNetConnectionStatusPayloadResolvedPath;
 
-    private readonly object _activeConnectionsLock = new();
-    private readonly List<Task> _activeConnections = new();
     private readonly ConcurrentDictionary<string, long> _reconnectCooldownUntilByKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly WorldSessionMaterialRepository _worldSessionMaterialRepository;
-    private TcpListener? _listener;
-    private int _connectionSequence;
 
     public WorldProxyListener(
         ILogger<WorldProxyListener> logger,
