@@ -1457,11 +1457,11 @@ public sealed class WorldProxyListener : BackgroundService
 
                     string reportPath = HandshakeDiagnosticsWriters.WriteHandshakeLabReport(
                         report,
-                        EnsureHandshakeRunlogsDirectory(_options));
+                        WorldGatewayPathResolver.EnsureHandshakeRunlogsDirectory(_options));
                     HandshakeDiagnosticsWriters.AppendNegativeEvidenceMatrixRow(
                         reportPath,
                         report,
-                        ResolveProofPackRoot(_options));
+                        WorldGatewayPathResolver.ResolveProofPackRoot(_options));
                     _logger.LogInformation(
                         "[WorldProxy][HANDSHAKE-LAB] Report written. ConnectionId={ConnectionId}, Path={Path}",
                         connectionId,
@@ -1550,13 +1550,13 @@ public sealed class WorldProxyListener : BackgroundService
                 "ProtocolEngineering experiment contract is incomplete. Set HypothesisId, SingleChangedVariable, ExpectedObservable, and NextIsolationVariable before running.");
         }
 
-        string matrixPath = Path.Combine(ResolveProofPackRoot(_options), "matrix", "negative_evidence.csv");
+        string matrixPath = Path.Combine(WorldGatewayPathResolver.ResolveProofPackRoot(_options), "matrix", "negative_evidence.csv");
         if (!File.Exists(matrixPath))
         {
             return;
         }
 
-        if (TryFindRejectedChangeSet(matrixPath, _protocolOptions.SingleChangedVariable, out string? rejectedHypothesis))
+        if (MatrixPolicyGuard.TryFindRejectedChangeSet(matrixPath, _protocolOptions.SingleChangedVariable, out string? rejectedHypothesis))
         {
             throw new InvalidOperationException(
                 $"Rejected change set replay is blocked by matrix policy. SingleChangedVariable='{_protocolOptions.SingleChangedVariable}', RejectedHypothesis='{rejectedHypothesis ?? "<unknown>"}', Matrix='{matrixPath}'.");
@@ -1975,7 +1975,7 @@ public sealed class WorldProxyListener : BackgroundService
                         {
                             AuthChallengeProofArtifacts artifacts = HandshakeDiagnosticsWriters.WriteAuthChallengeProofPack(
                                 connectionId,
-                                EnsureHandshakeRunlogsDirectory(_options),
+                                WorldGatewayPathResolver.EnsureHandshakeRunlogsDirectory(_options),
                                 authChallengeProof);
                             _logger.LogInformation(
                                 "[WorldProxy][PROOF] Auth challenge proof written. ConnectionId={ConnectionId}, Hex={HexPath}, Json={JsonPath}",
@@ -2063,8 +2063,8 @@ public sealed class WorldProxyListener : BackgroundService
                                 {
                                     if (_options.EnterEncryptedModeParityGateEnabled)
                                     {
-                                        string runlogsDir = EnsureHandshakeRunlogsDirectory(_options);
-                                        string projectRoot = ResolveProjectRoot();
+                                        string runlogsDir = WorldGatewayPathResolver.EnsureHandshakeRunlogsDirectory(_options);
+                                        string projectRoot = WorldGatewayPathResolver.ResolveProjectRoot();
                                         EnterEncryptedPayloadParityResult parity = HandshakeDiagnosticsWriters.EvaluateEnterEncryptedPayloadParity(
                                             _options,
                                             enterEncryptedModeFrame.AsSpan(20),
@@ -2144,8 +2144,8 @@ public sealed class WorldProxyListener : BackgroundService
                                             _options,
                                             proof,
                                             bridge.AccountId,
-                                            EnsureHandshakeRunlogsDirectory(_options),
-                                            ResolveProjectRoot());
+                                            WorldGatewayPathResolver.EnsureHandshakeRunlogsDirectory(_options),
+                                            WorldGatewayPathResolver.ResolveProjectRoot());
                                         bridgeState.SetProofPackArtifacts(artifacts.HexPath, artifacts.MetadataJsonPath, artifacts.DiffPath);
                                         _logger.LogInformation(
                                             "[WorldProxy][PROOF] Proof pack written. ConnectionId={ConnectionId}, Hex={HexPath}, Json={JsonPath}, Diff={DiffPath}",
@@ -2687,7 +2687,7 @@ public sealed class WorldProxyListener : BackgroundService
                                     deferredParity = HandshakeDiagnosticsWriters.EvaluateFirstDeferredFrameParity(
                                         _options.ProbeFirstDeferredFrameParityFixturePath,
                                         protectedFrame,
-                                        ResolveProjectRoot());
+                                        WorldGatewayPathResolver.ResolveProjectRoot());
                                     bool parityConfigured = !string.IsNullOrWhiteSpace(_options.ProbeFirstDeferredFrameParityFixturePath);
                                     bool parityPassed = !parityConfigured ||
                                         string.Equals(deferredParity.Status, "match", StringComparison.OrdinalIgnoreCase);
@@ -4474,7 +4474,7 @@ public sealed class WorldProxyListener : BackgroundService
         string resolvedPath = metadataPath;
         if (!Path.IsPathRooted(resolvedPath))
         {
-            resolvedPath = Path.Combine(ResolveProjectRoot(), resolvedPath);
+            resolvedPath = Path.Combine(WorldGatewayPathResolver.ResolveProjectRoot(), resolvedPath);
         }
 
         if (!File.Exists(resolvedPath))
@@ -8212,105 +8212,6 @@ public sealed class WorldProxyListener : BackgroundService
         }
     }
 
-    private static bool TryFindRejectedChangeSet(string matrixPath, string singleChangedVariable, out string? rejectedHypothesisId)
-    {
-        rejectedHypothesisId = null;
-
-        if (string.IsNullOrWhiteSpace(singleChangedVariable) || !File.Exists(matrixPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            foreach (string line in File.ReadLines(matrixPath, Encoding.UTF8))
-            {
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-
-                if (line.StartsWith("hypothesis_id,", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (!TryParseCsvColumns(line, out string[] columns) || columns.Length < 8)
-                {
-                    continue;
-                }
-
-                string columnSingleChangedVariable = columns[3].Trim();
-                string decision = columns[7].Trim();
-                if (!string.Equals(decision, "rejected", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (!string.Equals(columnSingleChangedVariable, singleChangedVariable, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                rejectedHypothesisId = columns[0].Trim();
-                return true;
-            }
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
-
-        return false;
-    }
-
-    private static bool TryParseCsvColumns(string line, out string[] columns)
-    {
-        var values = new List<string>(12);
-        var sb = new StringBuilder(line.Length);
-        bool inQuotes = false;
-
-        for (int idx = 0; idx < line.Length; idx++)
-        {
-            char ch = line[idx];
-            if (ch == '"')
-            {
-                if (inQuotes && idx + 1 < line.Length && line[idx + 1] == '"')
-                {
-                    sb.Append('"');
-                    idx++;
-                    continue;
-                }
-
-                inQuotes = !inQuotes;
-                continue;
-            }
-
-            if (ch == ',' && !inQuotes)
-            {
-                values.Add(sb.ToString());
-                sb.Clear();
-                continue;
-            }
-
-            sb.Append(ch);
-        }
-
-        if (inQuotes)
-        {
-            columns = Array.Empty<string>();
-            return false;
-        }
-
-        values.Add(sb.ToString());
-        columns = values.ToArray();
-        return true;
-    }
-
     private enum BootstrapFlushTriggerMode
     {
         Ack = 0,
@@ -8383,7 +8284,7 @@ public sealed class WorldProxyListener : BackgroundService
 
         resolvedPath = Path.IsPathRooted(decisionPath)
             ? decisionPath
-            : Path.Combine(ResolveProjectRoot(), decisionPath);
+            : Path.Combine(WorldGatewayPathResolver.ResolveProjectRoot(), decisionPath);
         if (!File.Exists(resolvedPath))
         {
             return false;
@@ -8449,24 +8350,6 @@ public sealed class WorldProxyListener : BackgroundService
         }
 
         return false;
-    }
-
-    private static string EnsureHandshakeRunlogsDirectory(WorldProxyOptions options)
-    {
-        string runlogsDir = Path.Combine(ResolveProofPackRoot(options), "runlogs");
-        Directory.CreateDirectory(runlogsDir);
-        return runlogsDir;
-    }
-
-    private static string ResolveProofPackRoot(WorldProxyOptions options)
-    {
-        if (Path.IsPathRooted(options.ProofPackRootPath))
-        {
-            return options.ProofPackRootPath;
-        }
-
-        string root = ResolveProjectRoot();
-        return Path.Combine(root, options.ProofPackRootPath);
     }
 
     private static bool TryParseFlexibleUInt32(string? value, out uint parsed)
@@ -8582,7 +8465,7 @@ public sealed class WorldProxyListener : BackgroundService
 
         resolvedPath = Path.IsPathRooted(rawPath)
             ? rawPath
-            : Path.Combine(ResolveProjectRoot(), rawPath);
+            : Path.Combine(WorldGatewayPathResolver.ResolveProjectRoot(), rawPath);
 
         if (!File.Exists(resolvedPath))
         {
@@ -8644,47 +8527,6 @@ public sealed class WorldProxyListener : BackgroundService
         }
     }
 
-    private static string ResolveProjectRoot()
-    {
-        string? current = Directory.GetCurrentDirectory();
-        string? resolved = TryResolveProjectRootFrom(current);
-        if (!string.IsNullOrEmpty(resolved))
-        {
-            return resolved;
-        }
-
-        string? fromBase = TryResolveProjectRootFrom(AppContext.BaseDirectory);
-        if (!string.IsNullOrEmpty(fromBase))
-        {
-            return fromBase;
-        }
-
-        return current ?? AppContext.BaseDirectory;
-    }
-
-    private static string? TryResolveProjectRootFrom(string? startPath)
-    {
-        if (string.IsNullOrWhiteSpace(startPath))
-        {
-            return null;
-        }
-
-        var dir = new DirectoryInfo(startPath);
-        while (dir is not null)
-        {
-            bool hasSolution = File.Exists(Path.Combine(dir.FullName, "aimaya_wow.sln"));
-            bool hasSrc = Directory.Exists(Path.Combine(dir.FullName, "src", "Adapter.WorldGateway"));
-            if (hasSolution || hasSrc)
-            {
-                return dir.FullName;
-            }
-
-            dir = dir.Parent;
-        }
-
-        return null;
-    }
-
     private static IPAddress ParseBindAddress(string address)
     {
         if (string.IsNullOrWhiteSpace(address) ||
@@ -8702,4 +8544,5 @@ public sealed class WorldProxyListener : BackgroundService
         return IPAddress.Parse(address);
     }
 }
+
 
