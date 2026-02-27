@@ -25,68 +25,6 @@ namespace Adapter.WorldGateway;
 public sealed partial class WorldProxyListener : BackgroundService
 {
     private const int DefaultDumpBytes = 64;
-    // Legacy aliases preserved to keep refactor behavior-neutral while values live in a single opcode catalog.
-    private const uint RetailOpcodeAuthSession = WorldGatewayOpcodes.RetailCmsgAuthSession;
-    private const uint RetailOpcodeEnterEncryptedModeAck = WorldGatewayOpcodes.RetailCmsgEnterEncryptedModeAck;
-    private const uint RetailOpcodePing = WorldGatewayOpcodes.RetailCmsgPing;
-    private const uint RetailOpcodeLogDisconnect = WorldGatewayOpcodes.RetailCmsgLogDisconnect;
-    private const uint RetailOpcodeCmsgDbQueryBulk = WorldGatewayOpcodes.RetailCmsgDbQueryBulk;
-    private const uint RetailOpcodeCmsgHotfixRequest = WorldGatewayOpcodes.RetailCmsgHotfixRequest;
-    private const uint RetailOpcodeCmsgBattlePayGetProductList = WorldGatewayOpcodes.RetailCmsgBattlePayGetProductList;
-    private const uint RetailOpcodeCmsgBattlePayGetPurchaseList = WorldGatewayOpcodes.RetailCmsgBattlePayGetPurchaseList;
-    private const uint RetailOpcodeCmsgGetUndeleteCharacterCooldownStatus = WorldGatewayOpcodes.RetailCmsgGetUndeleteCharacterCooldownStatus;
-    private const uint RetailOpcodeCmsgUpdateVasPurchaseStates = WorldGatewayOpcodes.RetailCmsgUpdateVasPurchaseStates;
-    private const uint RetailOpcodeCmsgSocialContractRequest = WorldGatewayOpcodes.RetailCmsgSocialContractRequest;
-    private const uint RetailOpcodeCmsgQuickJoinAutoAcceptRequests = WorldGatewayOpcodes.RetailCmsgQuickJoinAutoAcceptRequests;
-    private const uint RetailOpcodeCmsgGetLastCatalogFetch = WorldGatewayOpcodes.RetailCmsgGetLastCatalogFetch;
-    private const uint RetailOpcodeCmsgServerTimeOffsetRequest = WorldGatewayOpcodes.RetailCmsgServerTimeOffsetRequest;
-    private const uint RetailOpcodeCmsgBattlenetRequest = WorldGatewayOpcodes.RetailCmsgBattlenetRequest;
-    private const uint RetailOpcodeEnumCharacters = WorldGatewayOpcodes.RetailCmsgEnumCharacters;
-    private const uint RetailOpcodeWarden3Data = WorldGatewayOpcodes.RetailCmsgWarden3Data;
-    private const uint RetailOpcodeCmsgAddonList = WorldGatewayOpcodes.RetailCmsgAddonList;
-    private const uint RetailOpcodeKeepAlive = WorldGatewayOpcodes.RetailCmsgKeepAlive;
-    private const uint RetailOpcodeTimeSyncResponse = WorldGatewayOpcodes.RetailCmsgTimeSyncResponse;
-    private const uint RetailOpcodeSmsgAuthResponse = WorldGatewayOpcodes.RetailSmsgAuthResponse;
-    private const uint RetailOpcodeSmsgAuthResponseSweepStart = WorldGatewayOpcodes.RetailSmsgAuthResponseSweepStart;
-    private const int RetailOpcodeSmsgAuthResponseSweepCount = WorldGatewayOpcodes.RetailSmsgAuthResponseSweepCount;
-    private const uint RetailOpcodeSmsgPong = WorldGatewayOpcodes.RetailSmsgPong;
-    private const uint RetailOpcodeSmsgCompressedPacket = WorldGatewayOpcodes.RetailSmsgCompressedPacket;
-    private const uint RetailOpcodeSmsgEnterEncryptedModeDefault = WorldGatewayOpcodes.RetailSmsgEnterEncryptedModeDefault;
-    private const uint RetailOpcodeSmsgTimeSyncRequest = WorldGatewayOpcodes.RetailSmsgTimeSyncRequest;
-    private const uint RetailOpcodeSmsgFeatureSystemStatusGlueScreen = WorldGatewayOpcodes.RetailSmsgFeatureSystemStatusGlueScreen;
-    private const uint RetailOpcodeSmsgMirrorVars = WorldGatewayOpcodes.RetailSmsgMirrorVars;
-    private const uint RetailOpcodeSmsgSetTimeZoneInformation = WorldGatewayOpcodes.RetailSmsgSetTimeZoneInformation;
-    private const uint RetailOpcodeSmsgEnumCharactersResult = WorldGatewayOpcodes.RetailSmsgEnumCharactersResult;
-    private const uint RetailOpcodeSmsgWarden3Data = WorldGatewayOpcodes.RetailSmsgWarden3Data;
-    private const uint RetailOpcodeSmsgAddonListRequest = WorldGatewayOpcodes.RetailSmsgAddonListRequest;
-    private const uint RetailOpcodeSmsgCacheVersion = WorldGatewayOpcodes.RetailSmsgCacheVersion;
-    private const uint RetailOpcodeSmsgDbReply = WorldGatewayOpcodes.RetailSmsgDbReply;
-    private const uint RetailOpcodeSmsgAvailableHotfixes = WorldGatewayOpcodes.RetailSmsgAvailableHotfixes;
-    private const uint RetailOpcodeSmsgHotfixConnect = WorldGatewayOpcodes.RetailSmsgHotfixConnect;
-    private const uint RetailOpcodeSmsgAccountDataTimes = WorldGatewayOpcodes.RetailSmsgAccountDataTimes;
-    private const uint RetailOpcodeSmsgServerTimeOffset = WorldGatewayOpcodes.RetailSmsgServerTimeOffset;
-    private const uint RetailOpcodeSmsgTutorialFlags = WorldGatewayOpcodes.RetailSmsgTutorialFlags;
-    private const uint RetailOpcodeSmsgAccountItemCollectionData = WorldGatewayOpcodes.RetailSmsgAccountItemCollectionData;
-    private const uint RetailOpcodeSmsgBattleNetResponse = WorldGatewayOpcodes.RetailSmsgBattleNetResponse;
-    private const uint RetailOpcodeSmsgBattleNetConnectionStatus = WorldGatewayOpcodes.RetailSmsgBattleNetConnectionStatus;
-    private const uint RetailOpcodeSmsgUndeleteCooldownStatusResponse = WorldGatewayOpcodes.RetailSmsgUndeleteCooldownStatusResponse;
-    private const uint RetailOpcodeSmsgSocialContractRequestResponse = WorldGatewayOpcodes.RetailSmsgSocialContractRequestResponse;
-    private const uint RetailOpcodeSmsgAuthSequencePrelude = WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude;
-    private const uint AcoreOpcodeAuthSession = WorldGatewayOpcodes.AcoreCmsgAuthSession;
-    private const uint AcoreOpcodeCharEnum = WorldGatewayOpcodes.AcoreCmsgCharEnum;
-    private const uint AcoreOpcodePing = WorldGatewayOpcodes.AcoreCmsgPing;
-    private const uint AcoreOpcodeWardenData = WorldGatewayOpcodes.AcoreCmsgWardenData;
-    private const uint AcoreOpcodeTimeSyncResp = WorldGatewayOpcodes.AcoreCmsgTimeSyncResp;
-    private const uint AcoreOpcodeKeepAlive = WorldGatewayOpcodes.AcoreCmsgKeepAlive;
-    private const ushort AcoreOpcodeAuthChallenge = WorldGatewayOpcodes.AcoreSmsgAuthChallenge;
-    private const ushort AcoreOpcodeSmsgAuthResponse = WorldGatewayOpcodes.AcoreSmsgAuthResponse;
-    private const ushort AcoreOpcodeSmsgCharEnum = WorldGatewayOpcodes.AcoreSmsgCharEnum;
-    private const ushort AcoreOpcodeSmsgPong = WorldGatewayOpcodes.AcoreSmsgPong;
-    private const ushort AcoreOpcodeSmsgTimeSyncRequest = WorldGatewayOpcodes.AcoreSmsgTimeSyncRequest;
-    private const ushort AcoreOpcodeSmsgWardenData = WorldGatewayOpcodes.AcoreSmsgWardenData;
-    private const ushort AcoreOpcodeSmsgAddonInfo = WorldGatewayOpcodes.AcoreSmsgAddonInfo;
-    private const ushort AcoreOpcodeSmsgClientCacheVersion = WorldGatewayOpcodes.AcoreSmsgClientCacheVersion;
-    private const ushort AcoreOpcodeSmsgTutorialFlags = WorldGatewayOpcodes.AcoreSmsgTutorialFlags;
     private const int AcoreSessionKeyBytes = 40;
     private const int AcoreDigestBytes = 20;
     private const int RetailDigestBytes = 24;
@@ -229,10 +167,10 @@ public sealed partial class WorldProxyListener : BackgroundService
             _options.BootstrapFlushTriggerSource,
             out _bootstrapFlushTriggerModeValid);
         _enterEncryptedModeOpcodeValid = WorldProxyConfigParsers.TryParseFlexibleUInt32(_options.EnterEncryptedModeOpcode, out _enterEncryptedModeOpcode);
-        _probeAuthResponseOpcode = RetailOpcodeSmsgAuthResponse;
+        _probeAuthResponseOpcode = WorldGatewayOpcodes.RetailSmsgAuthResponse;
         if (!_enterEncryptedModeOpcodeValid)
         {
-            _enterEncryptedModeOpcode = RetailOpcodeSmsgEnterEncryptedModeDefault;
+            _enterEncryptedModeOpcode = WorldGatewayOpcodes.RetailSmsgEnterEncryptedModeDefault;
         }
 
         if (!string.IsNullOrWhiteSpace(_options.ProbeAuthResponseOpcodeOverride))
@@ -251,8 +189,8 @@ public sealed partial class WorldProxyListener : BackgroundService
             _options.ProbeAuthResponseFuzzerEnabled,
             _options.ProbeAuthResponseFuzzerPlan,
             _options.ProbeAuthResponseFuzzerIteration,
-            RetailOpcodeSmsgAuthResponseSweepStart,
-            RetailOpcodeSmsgAuthResponseSweepCount,
+            WorldGatewayOpcodes.RetailSmsgAuthResponseSweepStart,
+            WorldGatewayOpcodes.RetailSmsgAuthResponseSweepCount,
             out _authResponseFuzzPlanRecognized);
         if (_authResponseFuzzMutation.Enabled && _authResponseFuzzMutation.OpcodeOverride is uint fuzzOpcode)
         {
@@ -510,7 +448,7 @@ public sealed partial class WorldProxyListener : BackgroundService
             _logger.LogWarning(
                 "WorldProxy option EnterEncryptedModeOpcode is invalid ('{ConfiguredValue}'). Falling back to default 0x{DefaultOpcode:X8}.",
                 _options.EnterEncryptedModeOpcode,
-                RetailOpcodeSmsgEnterEncryptedModeDefault);
+                WorldGatewayOpcodes.RetailSmsgEnterEncryptedModeDefault);
         }
 
         if (_probeAuthResponseOpcodeOverrideProvided && !_probeAuthResponseOpcodeOverrideValid)
@@ -518,10 +456,10 @@ public sealed partial class WorldProxyListener : BackgroundService
             _logger.LogWarning(
                 "WorldProxy option ProbeAuthResponseOpcodeOverride is invalid ('{ConfiguredValue}'). Falling back to default 0x{DefaultOpcode:X8}.",
                 _options.ProbeAuthResponseOpcodeOverride,
-                RetailOpcodeSmsgAuthResponse);
+                WorldGatewayOpcodes.RetailSmsgAuthResponse);
         }
 
-        if (_probeAuthResponseOpcode != RetailOpcodeSmsgAuthResponse)
+        if (_probeAuthResponseOpcode != WorldGatewayOpcodes.RetailSmsgAuthResponse)
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: AUTH_RESPONSE opcode override active (0x{Opcode:X8}).",
@@ -858,7 +796,7 @@ public sealed partial class WorldProxyListener : BackgroundService
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: retail sequence prelude mode active (inject 0x{Opcode:X8} before AUTH_RESPONSE, Payload={PayloadHex}).",
-                RetailOpcodeSmsgAuthSequencePrelude,
+                WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude,
                 Convert.ToHexString(_probeRetailSequencePreludePayload));
         }
 
@@ -872,7 +810,7 @@ public sealed partial class WorldProxyListener : BackgroundService
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: retail sequence prelude mode active (inject 0x{Opcode:X8} after AUTH_RESPONSE, Payload={PayloadHex}).",
-                RetailOpcodeSmsgAuthSequencePrelude,
+                WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude,
                 Convert.ToHexString(_probeRetailSequencePreludePayload));
         }
 
@@ -888,7 +826,7 @@ public sealed partial class WorldProxyListener : BackgroundService
             {
                 _logger.LogWarning(
                     "WorldProxy probe enabled: deferred bootstrap reorder active (move first deferred frame to slot immediately after prelude 0x{Opcode:X8}).",
-                    RetailOpcodeSmsgAuthSequencePrelude);
+                    WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude);
             }
         }
 
@@ -1200,7 +1138,3 @@ public sealed partial class WorldProxyListener : BackgroundService
     }
 
 }
-
-
-
-

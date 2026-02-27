@@ -22,7 +22,7 @@ public sealed partial class WorldProxyListener
             // then flush them in order right after auth response has been forwarded.
             if (!_authResponseForwarded)
             {
-                if (opcode != AcoreOpcodeSmsgAuthResponse)
+                if (opcode != WorldGatewayOpcodes.AcoreSmsgAuthResponse)
                 {
                     TryBufferOrDropPreAuthFrame(opcode, payload);
                     return true;

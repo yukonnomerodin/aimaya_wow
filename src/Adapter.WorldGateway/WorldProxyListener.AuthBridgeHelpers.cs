@@ -191,7 +191,7 @@ public sealed partial class WorldProxyListener
                 addonInfo,
                 _options.AcoreClientBuild,
                 _options.AcoreRealmId);
-            byte[] frame = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeAuthSession, payload);
+            byte[] frame = AcoreFrameBuilder.BuildAcoreClientFrame(WorldGatewayOpcodes.AcoreCmsgAuthSession, payload);
             var authCrypt = new AuthCrypt();
             authCrypt.Init(account.SessionKey);
 

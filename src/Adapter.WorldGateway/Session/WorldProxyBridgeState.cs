@@ -8,10 +8,6 @@ namespace Adapter.WorldGateway;
 
 internal sealed class WorldProxyBridgeState
 {
-    private const uint ClientOpcodeEnterEncryptedModeAck = WorldGatewayOpcodes.RetailCmsgEnterEncryptedModeAck;
-    private const uint ClientOpcodeEnumCharacters = WorldGatewayOpcodes.RetailCmsgEnumCharacters;
-    private const ushort ServerOpcodeAuthResponse = WorldGatewayOpcodes.AcoreSmsgAuthResponse;
-    private const ushort ServerOpcodeCharEnum = WorldGatewayOpcodes.AcoreSmsgCharEnum;
     private const int PreAckTraceMaxFrames = 6;
     private const int PostAckTraceMaxFrames = 9;
     private const int PostAckTraceHeadBytes = 64;
@@ -214,7 +210,7 @@ internal sealed class WorldProxyBridgeState
         error = null;
         lock (_stageSync)
         {
-            if (opcode == ClientOpcodeEnterEncryptedModeAck && _currentStage < BridgeStage.ENTER_ENCRYPTED_SENT)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgEnterEncryptedModeAck && _currentStage < BridgeStage.ENTER_ENCRYPTED_SENT)
             {
                 string actual = $"opcode=0x{opcode:X8} in stage={_currentStage}";
                 MarkTemporalInvariantLocked(
@@ -230,7 +226,7 @@ internal sealed class WorldProxyBridgeState
                 }
             }
 
-            if (opcode == ClientOpcodeEnumCharacters && _currentStage < BridgeStage.BOOTSTRAP_FLUSHED)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgEnumCharacters && _currentStage < BridgeStage.BOOTSTRAP_FLUSHED)
             {
                 string actual = $"opcode=0x{opcode:X8} in stage={_currentStage}";
                 MarkTemporalInvariantLocked(
@@ -255,7 +251,7 @@ internal sealed class WorldProxyBridgeState
         error = null;
         lock (_stageSync)
         {
-            if (opcode == ServerOpcodeAuthResponse && _currentStage < BridgeStage.AUTH_SESSION_BRIDGED)
+            if (opcode == WorldGatewayOpcodes.AcoreSmsgAuthResponse && _currentStage < BridgeStage.AUTH_SESSION_BRIDGED)
             {
                 string actual = $"opcode=0x{opcode:X4} in stage={_currentStage}";
                 MarkTemporalInvariantLocked(
@@ -271,7 +267,7 @@ internal sealed class WorldProxyBridgeState
                 }
             }
 
-            if (opcode == ServerOpcodeCharEnum && _currentStage < BridgeStage.CHAR_ENUM_REQUESTED)
+            if (opcode == WorldGatewayOpcodes.AcoreSmsgCharEnum && _currentStage < BridgeStage.CHAR_ENUM_REQUESTED)
             {
                 string actual = $"opcode=0x{opcode:X4} in stage={_currentStage}";
                 MarkTemporalInvariantLocked(
@@ -1586,4 +1582,3 @@ internal readonly record struct DeferredFrameParityResult(
     int? DiffOffset,
     string? ExpectedBytes,
     string? ActualBytes);
-

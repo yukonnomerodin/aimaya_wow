@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Buffers.Binary;
 
@@ -172,12 +172,12 @@ public sealed partial class WorldProxyListener
                 return false;
             }
 
-            if (opcode != RetailOpcodeEnterEncryptedModeAck && _bridgeState.AckObserved)
+            if (opcode != WorldGatewayOpcodes.RetailCmsgEnterEncryptedModeAck && _bridgeState.AckObserved)
             {
                 _onPostAckNonAckClientFrame?.Invoke(opcode);
             }
 
-            if (opcode == RetailOpcodePing)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgPing)
             {
                 if (payloadBytes < 8)
                 {
@@ -187,13 +187,13 @@ public sealed partial class WorldProxyListener
 
                 return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
                     _authCrypt,
-                    AcoreOpcodePing,
+                    WorldGatewayOpcodes.AcoreCmsgPing,
                     payload[..8],
                     output,
                     out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeEnterEncryptedModeAck)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgEnterEncryptedModeAck)
             {
                 // Retail world stage ack for SMSG_ENTER_ENCRYPTED_MODE.
                 // No AC equivalent in 3.3.5 bridge mode.
@@ -201,40 +201,40 @@ public sealed partial class WorldProxyListener
                 return true;
             }
 
-            if (opcode == RetailOpcodeEnumCharacters)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgEnumCharacters)
             {
                 _onEnumCharactersRequest?.Invoke();
                 return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
                     _authCrypt,
-                    AcoreOpcodeCharEnum,
+                    WorldGatewayOpcodes.AcoreCmsgCharEnum,
                     ReadOnlySpan<byte>.Empty,
                     output,
                     out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeWarden3Data)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgWarden3Data)
             {
                 return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
                     _authCrypt,
-                    AcoreOpcodeWardenData,
+                    WorldGatewayOpcodes.AcoreCmsgWardenData,
                     payload,
                     output,
                     out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeCmsgGetUndeleteCharacterCooldownStatus)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgGetUndeleteCharacterCooldownStatus)
             {
                 _bridgeState.MarkPendingUndeleteCooldownStatusRequest();
                 return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeCmsgSocialContractRequest)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgSocialContractRequest)
             {
                 _bridgeState.MarkPendingSocialContractRequest();
                 return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeCmsgDbQueryBulk)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgDbQueryBulk)
             {
                 if (RetailGlueRequestParsers.TryParseDbQueryBulk(payload, out ParsedDbQueryBulk query, out _))
                 {
@@ -248,19 +248,19 @@ public sealed partial class WorldProxyListener
                 return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeCmsgHotfixRequest)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgHotfixRequest)
             {
                 _bridgeState.MarkPendingHotfixRequest();
                 return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeCmsgServerTimeOffsetRequest)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgServerTimeOffsetRequest)
             {
                 _bridgeState.MarkPendingServerTimeOffsetRequest();
                 return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeCmsgBattlenetRequest)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgBattlenetRequest)
             {
                 if (RetailGlueRequestParsers.TryParseBattlenetRequest(payload, out ParsedBattlenetRequest request, out _))
                 {
@@ -277,11 +277,11 @@ public sealed partial class WorldProxyListener
                 return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeCmsgBattlePayGetPurchaseList ||
-                opcode == RetailOpcodeCmsgBattlePayGetProductList ||
-                opcode == RetailOpcodeCmsgUpdateVasPurchaseStates ||
-                opcode == RetailOpcodeCmsgQuickJoinAutoAcceptRequests ||
-                opcode == RetailOpcodeCmsgGetLastCatalogFetch)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgBattlePayGetPurchaseList ||
+                opcode == WorldGatewayOpcodes.RetailCmsgBattlePayGetProductList ||
+                opcode == WorldGatewayOpcodes.RetailCmsgUpdateVasPurchaseStates ||
+                opcode == WorldGatewayOpcodes.RetailCmsgQuickJoinAutoAcceptRequests ||
+                opcode == WorldGatewayOpcodes.RetailCmsgGetLastCatalogFetch)
             {
                 if (_bridgeState.CurrentStage >= BridgeStage.CHAR_ENUM_RECEIVED)
                 {
@@ -293,24 +293,24 @@ public sealed partial class WorldProxyListener
                 return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeCmsgAddonList)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgAddonList)
             {
                 // AC receives addon metadata inside CMSG_AUTH_SESSION payload.
                 // Ignore standalone Retail addon list packets in bridge mode.
                 return true;
             }
 
-            if (opcode == RetailOpcodeKeepAlive)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgKeepAlive)
             {
                 return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
                     _authCrypt,
-                    AcoreOpcodeKeepAlive,
+                    WorldGatewayOpcodes.AcoreCmsgKeepAlive,
                     ReadOnlySpan<byte>.Empty,
                     output,
                     out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeTimeSyncResponse)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgTimeSyncResponse)
             {
                 if (payloadBytes < 8)
                 {
@@ -320,13 +320,13 @@ public sealed partial class WorldProxyListener
 
                 return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
                     _authCrypt,
-                    AcoreOpcodeTimeSyncResp,
+                    WorldGatewayOpcodes.AcoreCmsgTimeSyncResp,
                     payload[..8],
                     output,
                     out bytesWritten);
             }
 
-            if (opcode == RetailOpcodeLogDisconnect)
+            if (opcode == WorldGatewayOpcodes.RetailCmsgLogDisconnect)
             {
                 if (payloadBytes >= 4)
                 {
@@ -349,17 +349,17 @@ public sealed partial class WorldProxyListener
         {
             bytesWritten = 0;
 
-            bool bypassThrottle = triggerOpcode == RetailOpcodeCmsgDbQueryBulk ||
-                                  triggerOpcode == RetailOpcodeCmsgBattlenetRequest ||
-                                  triggerOpcode == RetailOpcodeCmsgServerTimeOffsetRequest ||
-                                  triggerOpcode == RetailOpcodeCmsgHotfixRequest ||
-                                  triggerOpcode == RetailOpcodeCmsgBattlePayGetPurchaseList ||
-                                  triggerOpcode == RetailOpcodeCmsgBattlePayGetProductList ||
-                                  triggerOpcode == RetailOpcodeCmsgUpdateVasPurchaseStates ||
-                                  triggerOpcode == RetailOpcodeCmsgQuickJoinAutoAcceptRequests ||
-                                  triggerOpcode == RetailOpcodeCmsgGetLastCatalogFetch ||
-                                  triggerOpcode == RetailOpcodeCmsgSocialContractRequest ||
-                                  triggerOpcode == RetailOpcodeCmsgGetUndeleteCharacterCooldownStatus;
+            bool bypassThrottle = triggerOpcode == WorldGatewayOpcodes.RetailCmsgDbQueryBulk ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgBattlenetRequest ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgServerTimeOffsetRequest ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgHotfixRequest ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgBattlePayGetPurchaseList ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgBattlePayGetProductList ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgUpdateVasPurchaseStates ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgQuickJoinAutoAcceptRequests ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgGetLastCatalogFetch ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgSocialContractRequest ||
+                                  triggerOpcode == WorldGatewayOpcodes.RetailCmsgGetUndeleteCharacterCooldownStatus;
 
             if (!bypassThrottle &&
                 _glueSyntheticCharEnumKickMinIntervalMs > 0 &&
@@ -382,7 +382,7 @@ public sealed partial class WorldProxyListener
 
             bool forwarded = PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
                 _authCrypt,
-                AcoreOpcodeCharEnum,
+                WorldGatewayOpcodes.AcoreCmsgCharEnum,
                 ReadOnlySpan<byte>.Empty,
                 output,
                 out bytesWritten);

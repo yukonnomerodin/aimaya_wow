@@ -338,7 +338,7 @@ public sealed partial class WorldProxyListener
                             decode.SizeBEMatches);
 
                         if (direction == "world->client" &&
-                            decode.OpcodeLE == AcoreOpcodeAuthChallenge &&
+                            decode.OpcodeLE == WorldGatewayOpcodes.AcoreSmsgAuthChallenge &&
                             AcoreAuthChallengeDumpDecoder.TryDecode(buffer, out AcoreAuthChallengeDump challenge))
                         {
                             bridgeState.SetAcoreAuthSeed(challenge.AuthSeed);
@@ -741,7 +741,7 @@ public sealed partial class WorldProxyListener
                     bridgeState.TryGetAcoreAuthSeed(out uint authSeed) &&
                     RetailAuthSessionParser.TryParseRetailAuthSessionFrame(
                         buffer,
-                        RetailOpcodeAuthSession,
+                        WorldGatewayOpcodes.RetailCmsgAuthSession,
                         RetailAuthFixedPayloadBytes,
                         out RetailAuthSessionFrame retailAuthFrame))
                 {
@@ -1297,7 +1297,7 @@ public sealed partial class WorldProxyListener
                                 RetailFrameChunk frame = deferredFrames[frameIndex];
                                 bool shouldDropFrame = _probeDropDeferredOpcodes.Contains(frame.Opcode);
                                 if (_options.ProbeBareAuthResponseOnly &&
-                                    frame.Opcode == RetailOpcodeSmsgAuthResponse)
+                                    frame.Opcode == WorldGatewayOpcodes.RetailSmsgAuthResponse)
                                 {
                                     // In bare AUTH_RESPONSE probe mode, always deliver AUTH_RESPONSE even if
                                     // legacy probe drop list still includes it from previous experiments.
@@ -1316,7 +1316,7 @@ public sealed partial class WorldProxyListener
                                     continue;
                                 }
 
-                                bool isPreludeFrame = frame.Opcode == RetailOpcodeSmsgAuthSequencePrelude;
+                                bool isPreludeFrame = frame.Opcode == WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude;
                                 bool isAuthResponseFrame = frame.Opcode == _probeAuthResponseOpcode;
                                 if (isAuthResponseFrame)
                                 {

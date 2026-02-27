@@ -20,11 +20,11 @@ public sealed partial class WorldProxyListener
             bool wroteCharEnumToClient = false;
             if (!suppressSyntheticEmptyRefresh)
             {
-                byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgEnumCharactersResult, payload);
+                byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgEnumCharactersResult, payload);
                 if (_controlledUnlockEmptyCharEnumEnabled &&
                     PostAuthTranslationHelpers.TryBuildControlledUnlockEmptyCharEnumFrame(
                         payload,
-                        RetailOpcodeSmsgEnumCharactersResult,
+                        WorldGatewayOpcodes.RetailSmsgEnumCharactersResult,
                         out byte[] unlockedMapped))
                 {
                     mapped = unlockedMapped;
@@ -42,7 +42,7 @@ public sealed partial class WorldProxyListener
 
                 if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
                         _bridgeState,
-                        RetailGluePayloadBuilders.BuildAccountItemCollectionDataFrame(RetailOpcodeSmsgAccountItemCollectionData),
+                        RetailGluePayloadBuilders.BuildAccountItemCollectionDataFrame(WorldGatewayOpcodes.RetailSmsgAccountItemCollectionData),
                         output,
                         out long accountCollectionBytes,
                         out string? accountCollectionError))
@@ -67,7 +67,7 @@ public sealed partial class WorldProxyListener
                     if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
                             _bridgeState,
                             RetailGluePayloadBuilders.BuildSocialContractRequestResponseFrame(
-                                RetailOpcodeSmsgSocialContractRequestResponse,
+                                WorldGatewayOpcodes.RetailSmsgSocialContractRequestResponse,
                                 showSocialContract: false),
                             output,
                             out long socialBytes,
@@ -85,7 +85,7 @@ public sealed partial class WorldProxyListener
                     if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
                             _bridgeState,
                             RetailGluePayloadBuilders.BuildUndeleteCooldownStatusResponseFrame(
-                                RetailOpcodeSmsgUndeleteCooldownStatusResponse,
+                                WorldGatewayOpcodes.RetailSmsgUndeleteCooldownStatusResponse,
                                 maxCooldownSeconds: 0u,
                                 currentCooldownSeconds: 0u,
                                 onCooldown: false),
@@ -104,7 +104,7 @@ public sealed partial class WorldProxyListener
                 {
                     if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
                             _bridgeState,
-                            RetailGluePayloadBuilders.BuildHotfixConnectFrame(RetailOpcodeSmsgHotfixConnect),
+                            RetailGluePayloadBuilders.BuildHotfixConnectFrame(WorldGatewayOpcodes.RetailSmsgHotfixConnect),
                             output,
                             out long hotfixBytes,
                             out string? hotfixError))
@@ -121,7 +121,7 @@ public sealed partial class WorldProxyListener
                     if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
                             _bridgeState,
                             RetailGluePayloadBuilders.BuildBattleNetResponseFrame(
-                                RetailOpcodeSmsgBattleNetResponse,
+                                WorldGatewayOpcodes.RetailSmsgBattleNetResponse,
                                 methodType: methodType,
                                 objectId: objectId,
                                 token: token,
@@ -143,7 +143,7 @@ public sealed partial class WorldProxyListener
                     if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
                             _bridgeState,
                             RetailGluePayloadBuilders.BuildServerTimeOffsetFrame(
-                                RetailOpcodeSmsgServerTimeOffset,
+                                WorldGatewayOpcodes.RetailSmsgServerTimeOffset,
                                 DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
                             output,
                             out long serverTimeBytes,
@@ -164,7 +164,7 @@ public sealed partial class WorldProxyListener
                         if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
                                 _bridgeState,
                                 RetailGluePayloadBuilders.BuildDbReplyFrame(
-                                    RetailOpcodeSmsgDbReply,
+                                    WorldGatewayOpcodes.RetailSmsgDbReply,
                                     tableHash: tableHash,
                                     recordId: recordIds[i],
                                     timestamp: dbReplyTimestamp,

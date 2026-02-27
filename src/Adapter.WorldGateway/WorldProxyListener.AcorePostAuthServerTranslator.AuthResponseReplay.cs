@@ -195,7 +195,7 @@ public sealed partial class WorldProxyListener
             if (_probeAuthResponseReplayCompressedPayload.Length > 0)
             {
                 mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(
-                    RetailOpcodeSmsgCompressedPacket,
+                    WorldGatewayOpcodes.RetailSmsgCompressedPacket,
                     _probeAuthResponseReplayCompressedPayload);
                 authResponseAlreadyCompressed = true;
             }

@@ -122,7 +122,7 @@ public sealed partial class WorldProxyListener
             bool probeCompressedAuthResponseCompressedChecksumIncludeMetadata = false,
             byte[]? probeRetailSequencePreludePayload = null,
             AuthResponseFuzzMutation authResponseFuzzMutation = default,
-            uint probeAuthResponseOpcode = RetailOpcodeSmsgAuthResponse,
+            uint probeAuthResponseOpcode = WorldGatewayOpcodes.RetailSmsgAuthResponse,
             byte[]? probeAuthResponseReplayPayload = null,
             byte[]? probeAuthResponseReplayCompressedPayload = null,
             bool probeAuthResponseReplayPatchTimeToNow = false,
@@ -193,7 +193,7 @@ public sealed partial class WorldProxyListener
                 ? probeRetailSequencePreludePayload.ToArray()
                 : [0, 0, 0, 0];
             _authResponseFuzzMutation = authResponseFuzzMutation;
-            _probeAuthResponseOpcode = probeAuthResponseOpcode == 0 ? RetailOpcodeSmsgAuthResponse : probeAuthResponseOpcode;
+            _probeAuthResponseOpcode = probeAuthResponseOpcode == 0 ? WorldGatewayOpcodes.RetailSmsgAuthResponse : probeAuthResponseOpcode;
             _probeAuthResponseReplayPayload = probeAuthResponseReplayPayload is { Length: > 0 }
                 ? probeAuthResponseReplayPayload.ToArray()
                 : Array.Empty<byte>();

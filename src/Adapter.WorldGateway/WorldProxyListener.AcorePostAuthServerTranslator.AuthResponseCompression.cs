@@ -28,7 +28,7 @@ public sealed partial class WorldProxyListener
                     _probeCompressedAuthResponseChecksumSeed,
                     _probeCompressedAuthResponseCompressedChecksumIncludeMetadata,
                     _statefulCompressedAuthResponseCompressor,
-                    RetailOpcodeSmsgCompressedPacket,
+                    WorldGatewayOpcodes.RetailSmsgCompressedPacket,
                     TrinityCompressionThresholdBytes,
                     out byte[] compressedAuthResponse,
                     out string? compressionError))

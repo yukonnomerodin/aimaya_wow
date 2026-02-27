@@ -13,7 +13,7 @@ public sealed partial class WorldProxyListener
             error = null;
             bool ackGatePending = _waitForEnterEncryptedAckGate && !_bridgeState.AckObserved;
 
-            if (_probeBareAuthResponseOnly && opcode != AcoreOpcodeSmsgCharEnum)
+            if (_probeBareAuthResponseOnly && opcode != WorldGatewayOpcodes.AcoreSmsgCharEnum)
             {
                 if (_loggedDroppedOpcodes.Add(opcode))
                 {
@@ -26,7 +26,7 @@ public sealed partial class WorldProxyListener
             // During ACK-gated bootstrap, these frames are already staged in deferred payload.
             // Suppress pre-ACK passthrough duplicates to keep pre-ACK sequence aligned with Trinity.
             if (ackGatePending &&
-                (opcode == AcoreOpcodeSmsgTutorialFlags || opcode == AcoreOpcodeSmsgClientCacheVersion))
+                (opcode == WorldGatewayOpcodes.AcoreSmsgTutorialFlags || opcode == WorldGatewayOpcodes.AcoreSmsgClientCacheVersion))
             {
                 if (_loggedDroppedOpcodes.Add(opcode))
                 {
@@ -35,7 +35,7 @@ public sealed partial class WorldProxyListener
                 return true;
             }
 
-            if (opcode == AcoreOpcodeSmsgCharEnum)
+            if (opcode == WorldGatewayOpcodes.AcoreSmsgCharEnum)
             {
                 return TryHandleAfterAuthCharEnum(payload, output, ref bytesWritten, out error);
             }

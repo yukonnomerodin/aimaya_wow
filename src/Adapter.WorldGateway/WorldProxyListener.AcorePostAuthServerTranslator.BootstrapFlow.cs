@@ -14,9 +14,9 @@ public sealed partial class WorldProxyListener
 
             if (_probeInsertRetailSequencePreludeBeforeAuthResponse)
             {
-                byte[] prelude = RetailAuthSequencePreludeBuilder.BuildFrame(RetailOpcodeSmsgAuthSequencePrelude, _probeRetailSequencePreludePayload);
+                byte[] prelude = RetailAuthSequencePreludeBuilder.BuildFrame(WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude, _probeRetailSequencePreludePayload);
                 bootstrapBuffer.Write(prelude);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgAuthSequencePrelude:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude:X8}");
             }
 
             bootstrapBuffer.Write(mapped);
@@ -25,9 +25,9 @@ public sealed partial class WorldProxyListener
 
             if (_probeInsertRetailSequencePreludeAfterAuthResponse)
             {
-                byte[] prelude = RetailAuthSequencePreludeBuilder.BuildFrame(RetailOpcodeSmsgAuthSequencePrelude, _probeRetailSequencePreludePayload);
+                byte[] prelude = RetailAuthSequencePreludeBuilder.BuildFrame(WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude, _probeRetailSequencePreludePayload);
                 bootstrapBuffer.Write(prelude);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgAuthSequencePrelude:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude:X8}");
             }
 
             if (!_probeBareAuthResponseOnly)
@@ -44,10 +44,10 @@ public sealed partial class WorldProxyListener
                     BufferedServerFrame buffered = _bufferedBeforeAuth[i];
                     switch (buffered.Opcode)
                     {
-                        case AcoreOpcodeSmsgClientCacheVersion when cacheVersionPayload is null:
+                        case WorldGatewayOpcodes.AcoreSmsgClientCacheVersion when cacheVersionPayload is null:
                             cacheVersionPayload = buffered.Payload;
                             break;
-                        case AcoreOpcodeSmsgTutorialFlags
+                        case WorldGatewayOpcodes.AcoreSmsgTutorialFlags
                             when _forwardAcoreTutorialFlagsAsRetailTutorialFlags &&
                                  tutorialFlagsPayload is null &&
                                  buffered.Payload.Length == RetailTutorialValuesCount * sizeof(uint):
@@ -64,60 +64,60 @@ public sealed partial class WorldProxyListener
                 }
 
                 byte[] timezone = _probeSetTimeZoneInformationPayload.Length > 0
-                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgSetTimeZoneInformation, _probeSetTimeZoneInformationPayload)
-                    : RetailSetTimeZoneInformationBuilder.BuildFrame(RetailOpcodeSmsgSetTimeZoneInformation);
+                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgSetTimeZoneInformation, _probeSetTimeZoneInformationPayload)
+                    : RetailSetTimeZoneInformationBuilder.BuildFrame(WorldGatewayOpcodes.RetailSmsgSetTimeZoneInformation);
                 bootstrapBuffer.Write(timezone);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgSetTimeZoneInformation:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgSetTimeZoneInformation:X8}");
 
                 byte[] features = _probeFeatureSystemStatusGlueScreenPayload.Length > 0
-                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgFeatureSystemStatusGlueScreen, _probeFeatureSystemStatusGlueScreenPayload)
+                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgFeatureSystemStatusGlueScreen, _probeFeatureSystemStatusGlueScreenPayload)
                     : RetailFeatureSystemStatusGlueScreenBuilder.BuildFrame(
-                        RetailOpcodeSmsgFeatureSystemStatusGlueScreen,
+                        WorldGatewayOpcodes.RetailSmsgFeatureSystemStatusGlueScreen,
                         _probeFeatureSystemStatusGlueScreenTrinitySemantics);
                 bootstrapBuffer.Write(features);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgFeatureSystemStatusGlueScreen:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgFeatureSystemStatusGlueScreen:X8}");
 
                 byte[] mirrorVars = _probeMirrorVarsPayload.Length > 0
-                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgMirrorVars, _probeMirrorVarsPayload)
-                    : RetailGluePayloadBuilders.BuildMirrorVarsFrame(RetailOpcodeSmsgMirrorVars);
+                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgMirrorVars, _probeMirrorVarsPayload)
+                    : RetailGluePayloadBuilders.BuildMirrorVarsFrame(WorldGatewayOpcodes.RetailSmsgMirrorVars);
                 bootstrapBuffer.Write(mirrorVars);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgMirrorVars:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgMirrorVars:X8}");
 
                 byte[] cacheVersion = _probeCacheVersionPayload.Length > 0
-                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, _probeCacheVersionPayload)
-                    : RetailGluePayloadBuilders.BuildCacheVersionFrame(RetailOpcodeSmsgCacheVersion, cacheVersionPayload);
+                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgCacheVersion, _probeCacheVersionPayload)
+                    : RetailGluePayloadBuilders.BuildCacheVersionFrame(WorldGatewayOpcodes.RetailSmsgCacheVersion, cacheVersionPayload);
                 bootstrapBuffer.Write(cacheVersion);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgCacheVersion:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgCacheVersion:X8}");
 
                 byte[] availableHotfixes = _probeAvailableHotfixesPayload.Length > 0
-                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAvailableHotfixes, _probeAvailableHotfixesPayload)
-                    : RetailGluePayloadBuilders.BuildAvailableHotfixesFrame(RetailOpcodeSmsgAvailableHotfixes, _acoreRealmId);
+                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgAvailableHotfixes, _probeAvailableHotfixesPayload)
+                    : RetailGluePayloadBuilders.BuildAvailableHotfixesFrame(WorldGatewayOpcodes.RetailSmsgAvailableHotfixes, _acoreRealmId);
                 bootstrapBuffer.Write(availableHotfixes);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgAvailableHotfixes:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgAvailableHotfixes:X8}");
 
                 byte[] accountDataTimes = _probeAccountDataTimesPayload.Length > 0
-                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAccountDataTimes, _probeAccountDataTimesPayload)
-                    : RetailGluePayloadBuilders.BuildAccountDataTimesFrame(RetailOpcodeSmsgAccountDataTimes, RetailAccountDataTimesCount);
+                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgAccountDataTimes, _probeAccountDataTimesPayload)
+                    : RetailGluePayloadBuilders.BuildAccountDataTimesFrame(WorldGatewayOpcodes.RetailSmsgAccountDataTimes, RetailAccountDataTimesCount);
                 bootstrapBuffer.Write(accountDataTimes);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgAccountDataTimes:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgAccountDataTimes:X8}");
 
                 byte[] tutorialFlags = _probeTutorialFlagsPayload.Length > 0
-                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, _probeTutorialFlagsPayload)
+                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgTutorialFlags, _probeTutorialFlagsPayload)
                     : RetailGluePayloadBuilders.BuildTutorialFlagsFrame(
-                        RetailOpcodeSmsgTutorialFlags,
+                        WorldGatewayOpcodes.RetailSmsgTutorialFlags,
                         tutorialFlagsPayload,
                         RetailTutorialValuesCount * sizeof(uint));
                 bootstrapBuffer.Write(tutorialFlags);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgTutorialFlags:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgTutorialFlags:X8}");
 
                 byte[] battleNetConnectionStatus = _probeBattleNetConnectionStatusPayload.Length > 0
-                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetConnectionStatus, _probeBattleNetConnectionStatusPayload)
+                    ? RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgBattleNetConnectionStatus, _probeBattleNetConnectionStatusPayload)
                     : RetailGluePayloadBuilders.BuildBattleNetConnectionStatusFrame(
-                        RetailOpcodeSmsgBattleNetConnectionStatus,
+                        WorldGatewayOpcodes.RetailSmsgBattleNetConnectionStatus,
                         state: 1,
                         suppressNotification: true);
                 bootstrapBuffer.Write(battleNetConnectionStatus);
-                stagedOpcodes.Add($"0x{RetailOpcodeSmsgBattleNetConnectionStatus:X8}");
+                stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgBattleNetConnectionStatus:X8}");
             }
             else
             {
@@ -136,7 +136,7 @@ public sealed partial class WorldProxyListener
                 PostAuthTranslationHelpers.ReorderFirstDeferredFrameAfterPrelude(
                     bootstrapBuffer,
                     stagedOpcodes,
-                    RetailOpcodeSmsgAuthSequencePrelude);
+                    WorldGatewayOpcodes.RetailSmsgAuthSequencePrelude);
             }
 
             byte[] bootstrapPayload = bootstrapBuffer.WrittenMemory.ToArray();
