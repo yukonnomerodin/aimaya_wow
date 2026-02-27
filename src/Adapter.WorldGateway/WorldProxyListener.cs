@@ -1570,7 +1570,7 @@ public sealed class WorldProxyListener : BackgroundService
 
                         if (direction == "world->client" &&
                             decode.OpcodeLE == AcoreOpcodeAuthChallenge &&
-                            TryDecodeAzerothAuthChallenge(buffer, out AcoreAuthChallengeDump challenge))
+                            AcoreAuthChallengeDumpDecoder.TryDecode(buffer, out AcoreAuthChallengeDump challenge))
                         {
                             bridgeState.SetAcoreAuthSeed(challenge.AuthSeed);
                             bridgeState.SetAcoreServerChallenge(challenge.NewSeed);
@@ -2990,28 +2990,6 @@ public sealed class WorldProxyListener : BackgroundService
         }
 
         return (0, "none");
-    }
-
-    private static bool TryDecodeAzerothAuthChallenge(ReadOnlySequence<byte> buffer, out AcoreAuthChallengeDump dump)
-    {
-        dump = default;
-        // AC world challenge packet: 2-byte size + 2-byte opcode + 40-byte payload.
-        if (buffer.Length < 44)
-        {
-            return false;
-        }
-
-        Span<byte> frame = stackalloc byte[44];
-        buffer.Slice(0, 44).CopyTo(frame);
-
-        uint dosChallenge = BinaryPrimitives.ReadUInt32LittleEndian(frame.Slice(4, 4));
-        uint authSeed = BinaryPrimitives.ReadUInt32LittleEndian(frame.Slice(8, 4));
-        byte[] newSeed = GC.AllocateUninitializedArray<byte>(32);
-        frame.Slice(12, 32).CopyTo(newSeed);
-        string newSeedHex = Convert.ToHexString(newSeed);
-
-        dump = new AcoreAuthChallengeDump(dosChallenge, authSeed, newSeedHex, newSeed);
-        return true;
     }
 
     private static async ValueTask CompletePipeSafelyAsync(PipeReader reader)
