@@ -3124,112 +3124,50 @@ public sealed class WorldProxyListener : BackgroundService
 
     private static byte[] BuildRetailMirrorVarsFrame()
     {
-        (string Name, string Value)[] vars =
-        [
-            ("raidLockoutExtendEnabled", "1"),
-            ("bypassItemLevelScalingCode", "0"),
-            ("shop2Enabled", "0"),
-            ("bpayStoreEnable", "0"),
-            ("recentAlliesEnabledClient", "0"),
-            ("browserEnabled", "0"),
-            ("housingEnableCreateGuildNeighborhood", "0"),
-            ("housingEnableDeleteHouse", "0"),
-            ("housingServiceEnabled", "0"),
-            ("housingEnableMoveHouse", "0"),
-            ("housingEnableCreateCharterNeighborhood", "0"),
-            ("housingEnableBuyHouse", "0"),
-            ("housingMarketEnabled", "0")
-        ];
-
-        var payload = new BitPackedBufferWriter(initialCapacity: 384);
-        payload.WriteUInt32LE((uint)vars.Length);
-        for (int i = 0; i < vars.Length; i++)
-        {
-            payload.WriteBit(false); // UpdateType
-            payload.WriteBits((ulong)vars[i].Name.Length, 24);
-            payload.WriteBits((ulong)vars[i].Value.Length, 24);
-            payload.FlushBits();
-            payload.WriteAscii(vars[i].Name);
-            payload.WriteAscii(vars[i].Value);
-        }
-
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgMirrorVars, payload.WrittenSpan);
-    }
-
-    private static uint BuildRetailVirtualRealmAddress(uint acoreRealmId)
-    {
-        uint realmId = acoreRealmId != 0 ? acoreRealmId : 1u;
-        return (1u << 24) | (1u << 16) | (realmId & 0xFFFF);
+        return RetailGluePayloadBuilders.BuildMirrorVarsFrame(RetailOpcodeSmsgMirrorVars);
     }
 
     private static byte[] BuildRetailCacheVersionFrame(byte[]? acoreCacheVersionPayload)
     {
-        ReadOnlySpan<byte> payload = acoreCacheVersionPayload is { Length: 4 }
-            ? acoreCacheVersionPayload
-            : [0, 0, 0, 0];
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, payload);
+        return RetailGluePayloadBuilders.BuildCacheVersionFrame(RetailOpcodeSmsgCacheVersion, acoreCacheVersionPayload);
     }
 
     private static byte[] BuildRetailAvailableHotfixesFrame(uint acoreRealmId)
     {
-        var payload = new BitPackedBufferWriter(initialCapacity: 8);
-        payload.WriteInt32LE(unchecked((int)BuildRetailVirtualRealmAddress(acoreRealmId))); // VirtualRealmAddress
-        payload.WriteUInt32LE(0); // Hotfixes count
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAvailableHotfixes, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildAvailableHotfixesFrame(RetailOpcodeSmsgAvailableHotfixes, acoreRealmId);
     }
 
     private static byte[] BuildRetailAccountDataTimesFrame()
     {
-        // Trinity serialization:
-        // packed ObjectGuid (empty => two zero mask bytes) + int64 server time + 20x int64 account timestamps.
-        var payload = new BitPackedBufferWriter(initialCapacity: 2 + 8 + (RetailAccountDataTimesCount * 8));
-        payload.WriteByte(0); // ObjectGuid mask[0] for ObjectGuid::Empty
-        payload.WriteByte(0); // ObjectGuid mask[1] for ObjectGuid::Empty
-        payload.WriteInt64LE(DateTimeOffset.UtcNow.ToUnixTimeSeconds()); // ServerTime
-        for (int i = 0; i < RetailAccountDataTimesCount; i++)
-        {
-            payload.WriteInt64LE(0); // AccountTimes[i]
-        }
-
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAccountDataTimes, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildAccountDataTimesFrame(RetailOpcodeSmsgAccountDataTimes, RetailAccountDataTimesCount);
     }
 
     private static byte[] BuildRetailTutorialFlagsFrame(byte[]? acoreTutorialFlagsPayload)
     {
-        ReadOnlySpan<byte> payload = acoreTutorialFlagsPayload is { Length: RetailTutorialValuesCount * sizeof(uint) }
-            ? acoreTutorialFlagsPayload
-            : new byte[RetailTutorialValuesCount * sizeof(uint)];
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, payload);
+        return RetailGluePayloadBuilders.BuildTutorialFlagsFrame(
+            RetailOpcodeSmsgTutorialFlags,
+            acoreTutorialFlagsPayload,
+            RetailTutorialValuesCount * sizeof(uint));
     }
 
     private static byte[] BuildRetailBattleNetConnectionStatusFrame(byte state, bool suppressNotification)
     {
-        var payload = new BitPackedBufferWriter(initialCapacity: 1);
-        payload.WriteBits((ulong)(state & 0x03), 2); // State
-        payload.WriteBit(suppressNotification); // SuppressNotification
-        payload.FlushBits();
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetConnectionStatus, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildBattleNetConnectionStatusFrame(
+            RetailOpcodeSmsgBattleNetConnectionStatus,
+            state,
+            suppressNotification);
     }
 
     private static byte[] BuildRetailAccountItemCollectionDataFrame()
     {
-        // Trinity 12.x CollectionPackets::AccountItemCollectionData::Write
-        // with empty warband-scene collection.
-        var payload = new BitPackedBufferWriter(initialCapacity: 10);
-        payload.WriteUInt32LE(0); // Unknown1110_1
-        payload.WriteByte(7); // Type = ItemCollectionType::WarbandScene
-        payload.WriteUInt32LE(0); // Items count
-        payload.WriteBit(false); // Unknown1110_2
-        payload.FlushBits();
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAccountItemCollectionData, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildAccountItemCollectionDataFrame(RetailOpcodeSmsgAccountItemCollectionData);
     }
 
     private static byte[] BuildRetailSocialContractRequestResponseFrame(bool showSocialContract)
     {
-        var payload = new BitPackedBufferWriter(initialCapacity: 1);
-        payload.WriteBit(showSocialContract);
-        payload.FlushBits();
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgSocialContractRequestResponse, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildSocialContractRequestResponseFrame(
+            RetailOpcodeSmsgSocialContractRequestResponse,
+            showSocialContract);
     }
 
     private static byte[] BuildRetailUndeleteCooldownStatusResponseFrame(
@@ -3237,12 +3175,11 @@ public sealed class WorldProxyListener : BackgroundService
         uint currentCooldownSeconds,
         bool onCooldown)
     {
-        var payload = new BitPackedBufferWriter(initialCapacity: 9);
-        payload.WriteUInt32LE(maxCooldownSeconds);
-        payload.WriteUInt32LE(currentCooldownSeconds);
-        payload.WriteBit(onCooldown);
-        payload.FlushBits();
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgUndeleteCooldownStatusResponse, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildUndeleteCooldownStatusResponseFrame(
+            RetailOpcodeSmsgUndeleteCooldownStatusResponse,
+            maxCooldownSeconds,
+            currentCooldownSeconds,
+            onCooldown);
     }
 
     private static byte[] BuildRetailDbReplyFrame(
@@ -3252,18 +3189,13 @@ public sealed class WorldProxyListener : BackgroundService
         byte status,
         ReadOnlySpan<byte> data)
     {
-        var payload = new BitPackedBufferWriter(initialCapacity: 20 + data.Length);
-        payload.WriteUInt32LE(tableHash);
-        payload.WriteInt32LE(recordId);
-        payload.WriteUInt32LE(timestamp);
-        payload.WriteBits((ulong)(status & 0x07), 3); // DB2Manager::HotfixRecord::Status (3 bits)
-        payload.WriteUInt32LE((uint)data.Length);
-        if (!data.IsEmpty)
-        {
-            payload.WriteBytes(data);
-        }
-
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgDbReply, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildDbReplyFrame(
+            RetailOpcodeSmsgDbReply,
+            tableHash,
+            recordId,
+            timestamp,
+            status,
+            data);
     }
 
     private static byte[] BuildRetailBattleNetResponseFrame(
@@ -3273,33 +3205,23 @@ public sealed class WorldProxyListener : BackgroundService
         uint statusCode,
         ReadOnlySpan<byte> data)
     {
-        var payload = new BitPackedBufferWriter(initialCapacity: 28 + data.Length);
-        payload.WriteUInt32LE(statusCode);
-        payload.WriteUInt64LE(methodType);
-        payload.WriteUInt64LE(objectId);
-        payload.WriteUInt32LE(token);
-        payload.WriteUInt32LE((uint)data.Length);
-        if (!data.IsEmpty)
-        {
-            payload.WriteBytes(data);
-        }
-
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetResponse, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildBattleNetResponseFrame(
+            RetailOpcodeSmsgBattleNetResponse,
+            methodType,
+            objectId,
+            token,
+            statusCode,
+            data);
     }
 
     private static byte[] BuildRetailServerTimeOffsetFrame(long unixTimeSeconds)
     {
-        var payload = new BitPackedBufferWriter(initialCapacity: sizeof(long));
-        payload.WriteInt64LE(unixTimeSeconds);
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgServerTimeOffset, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildServerTimeOffsetFrame(RetailOpcodeSmsgServerTimeOffset, unixTimeSeconds);
     }
 
     private static byte[] BuildRetailHotfixConnectFrame()
     {
-        var payload = new BitPackedBufferWriter(initialCapacity: 8);
-        payload.WriteUInt32LE(0); // Hotfixes count
-        payload.WriteUInt32LE(0); // HotfixContent size
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgHotfixConnect, payload.WrittenSpan);
+        return RetailGluePayloadBuilders.BuildHotfixConnectFrame(RetailOpcodeSmsgHotfixConnect);
     }
 
     private static bool TryDecodeAzerothAuthChallenge(ReadOnlySequence<byte> buffer, out AcoreAuthChallengeDump dump)
