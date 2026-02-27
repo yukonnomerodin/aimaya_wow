@@ -52,15 +52,18 @@ internal static class RetailFrameCodec
         bodyLength = 0;
         opcode = 0;
 
-        if (buffer.Length < 20)
+        if (buffer.Length < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes)
         {
             return false;
         }
 
-        Span<byte> header = stackalloc byte[20];
-        buffer.Slice(0, 20).CopyTo(header);
+        Span<byte> header = stackalloc byte[WorldGatewayProtocolConstants.RetailWorldFrameMinBytes];
+        buffer.Slice(0, WorldGatewayProtocolConstants.RetailWorldFrameMinBytes).CopyTo(header);
         bodyLength = BinaryPrimitives.ReadUInt32LittleEndian(header[..4]);
-        opcode = BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(16, 4));
+        opcode = BinaryPrimitives.ReadUInt32LittleEndian(
+            header.Slice(
+                WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes,
+                WorldGatewayProtocolConstants.RetailWorldOpcodeBytes));
         return true;
     }
 
@@ -69,24 +72,20 @@ internal static class RetailFrameCodec
         frames = new List<RetailFrameChunk>(8);
         error = null;
 
-        const int retailHeaderBytes = 16;
-        const int retailMinFrameBytes = 20;
-        const int maxRetailFrameBytes = 16 * 1024 * 1024;
-
         int offset = 0;
         while (offset < payload.Length)
         {
             int remaining = payload.Length - offset;
-            if (remaining < retailMinFrameBytes)
+            if (remaining < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes)
             {
-                error = $"Retail frame split failed: remaining bytes {remaining} are less than minimum frame size {retailMinFrameBytes}.";
+                error = $"Retail frame split failed: remaining bytes {remaining} are less than minimum frame size {WorldGatewayProtocolConstants.RetailWorldFrameMinBytes}.";
                 return false;
             }
 
             ReadOnlySpan<byte> frameStart = payload.Slice(offset);
             uint bodyLength = BinaryPrimitives.ReadUInt32LittleEndian(frameStart[..4]);
-            long frameBytesLong = retailHeaderBytes + (long)bodyLength;
-            if (frameBytesLong < retailMinFrameBytes || frameBytesLong > maxRetailFrameBytes)
+            long frameBytesLong = WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes + (long)bodyLength;
+            if (frameBytesLong < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes || frameBytesLong > WorldGatewayProtocolConstants.RetailWorldFrameMaxBytes)
             {
                 error = $"Retail frame split failed: invalid frame size {frameBytesLong} at offset {offset} (bodyLength={bodyLength}).";
                 return false;
@@ -105,8 +104,11 @@ internal static class RetailFrameCodec
                 return false;
             }
 
-            uint opcode = bodyLength >= 4
-                ? BinaryPrimitives.ReadUInt32LittleEndian(frameStart.Slice(16, 4))
+            uint opcode = bodyLength >= WorldGatewayProtocolConstants.RetailWorldOpcodeBytes
+                ? BinaryPrimitives.ReadUInt32LittleEndian(
+                    frameStart.Slice(
+                        WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes,
+                        WorldGatewayProtocolConstants.RetailWorldOpcodeBytes))
                 : 0;
 
             byte[] frame = GC.AllocateUninitializedArray<byte>(frameBytes);

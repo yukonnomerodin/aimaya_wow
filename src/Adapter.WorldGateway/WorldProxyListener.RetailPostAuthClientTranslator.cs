@@ -8,10 +8,6 @@ public sealed partial class WorldProxyListener
 {
     private sealed class RetailPostAuthClientTranslator
     {
-        private const int RetailOuterHeaderBytes = 16;
-        private const int RetailHeaderBytes = 20;
-        private const int MaxRetailFrameBytes = 4 * 1024 * 1024;
-
         private readonly AuthCrypt _authCrypt;
         private readonly WorldProxyBridgeState _bridgeState;
         private readonly bool _strictStageEnforcement;
@@ -82,14 +78,15 @@ public sealed partial class WorldProxyListener
                         }
 
                         uint packetSize = BinaryPrimitives.ReadUInt32LittleEndian(_sizePrefix);
-                        if (packetSize < 4)
+                        if (packetSize < WorldGatewayProtocolConstants.RetailWorldOpcodeBytes)
                         {
                             error = $"Invalid Retail frame size field (<4): {packetSize}.";
                             return false;
                         }
 
-                        _frameExpectedBytes = checked((int)packetSize + RetailOuterHeaderBytes);
-                        if (_frameExpectedBytes < RetailHeaderBytes || _frameExpectedBytes > MaxRetailFrameBytes)
+                        _frameExpectedBytes = checked((int)packetSize + WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes);
+                        if (_frameExpectedBytes < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes ||
+                            _frameExpectedBytes > WorldGatewayProtocolConstants.RetailPostAuthClientMaxFrameBytes)
                         {
                             error = $"Invalid Retail frame size (bytes): {_frameExpectedBytes}.";
                             return false;
@@ -140,7 +137,7 @@ public sealed partial class WorldProxyListener
             bytesWritten = 0;
             error = null;
 
-            if (retailFrame.Length < RetailHeaderBytes)
+            if (retailFrame.Length < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes)
             {
                 error = $"Retail frame is too short: {retailFrame.Length}.";
                 return false;
@@ -155,16 +152,21 @@ public sealed partial class WorldProxyListener
             ReadOnlySpan<byte> effectiveFrame = decryptedFrame;
 
             uint packetSize = BinaryPrimitives.ReadUInt32LittleEndian(effectiveFrame[..4]);
-            int expectedFrameBytes = checked((int)packetSize + RetailOuterHeaderBytes);
-            if (effectiveFrame.Length != expectedFrameBytes || packetSize < 4)
+            int expectedFrameBytes = checked((int)packetSize + WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes);
+            if (effectiveFrame.Length != expectedFrameBytes || packetSize < WorldGatewayProtocolConstants.RetailWorldOpcodeBytes)
             {
                 error = $"Retail frame size mismatch. PacketSize={packetSize}, FrameBytes={effectiveFrame.Length}, Expected={expectedFrameBytes}.";
                 return false;
             }
 
-            uint opcode = BinaryPrimitives.ReadUInt32LittleEndian(effectiveFrame.Slice(16, 4));
-            int payloadBytes = (int)packetSize - 4;
-            ReadOnlySpan<byte> payload = effectiveFrame.Slice(20, payloadBytes);
+            uint opcode = BinaryPrimitives.ReadUInt32LittleEndian(
+                effectiveFrame.Slice(
+                    WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes,
+                    WorldGatewayProtocolConstants.RetailWorldOpcodeBytes));
+            int payloadBytes = (int)packetSize - WorldGatewayProtocolConstants.RetailWorldOpcodeBytes;
+            ReadOnlySpan<byte> payload = effectiveFrame.Slice(
+                WorldGatewayProtocolConstants.RetailWorldPayloadOffsetBytes,
+                payloadBytes);
 
             if (!_bridgeState.ValidateClientOpcode(opcode, _strictStageEnforcement, out string? stageError))
             {

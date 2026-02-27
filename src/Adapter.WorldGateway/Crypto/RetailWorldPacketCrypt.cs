@@ -5,11 +5,6 @@ namespace Adapter.WorldGateway;
 
 internal sealed class RetailWorldPacketCrypt
 {
-    private const int HeaderBytes = 16;
-    private const int MinFrameBytes = 20;
-    private const int TagBytes = 12;
-    private const int MaxFrameBytes = 16 * 1024 * 1024;
-
     private readonly AesGcm _clientDecrypt;
     private readonly AesGcm _serverEncrypt;
     private readonly bool _useSizeAsAad;
@@ -42,8 +37,8 @@ internal sealed class RetailWorldPacketCrypt
             throw new ArgumentOutOfRangeException(nameof(aadSizeBytes), aadSizeBytes, "Retail world crypt AAD size must be 2 or 4 bytes.");
         }
 
-        _clientDecrypt = new AesGcm(key32, TagBytes);
-        _serverEncrypt = new AesGcm(key32, TagBytes);
+        _clientDecrypt = new AesGcm(key32, WorldGatewayProtocolConstants.RetailWorldFrameTagBytes);
+        _serverEncrypt = new AesGcm(key32, WorldGatewayProtocolConstants.RetailWorldFrameTagBytes);
         _useSizeAsAad = useSizeAsAad;
         _useEmptyAad = useEmptyAad;
         _aadSizeBytes = aadSizeBytes;
@@ -69,8 +64,8 @@ internal sealed class RetailWorldPacketCrypt
 
         // Size stays plaintext; optional probe mode may include size as AAD.
         plainFrame.Slice(0, 4).CopyTo(destination.Slice(0, 4));
-        Span<byte> tag = destination.Slice(4, TagBytes);
-        Span<byte> ciphertext = destination.Slice(HeaderBytes, bodyLength);
+        Span<byte> tag = destination.Slice(4, WorldGatewayProtocolConstants.RetailWorldFrameTagBytes);
+        Span<byte> ciphertext = destination.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, bodyLength);
         ReadOnlySpan<byte> associatedData = (_useEmptyAad || !_useSizeAsAad)
             ? ReadOnlySpan<byte>.Empty
             : plainFrame.Slice(0, _aadSizeBytes);
@@ -82,7 +77,7 @@ internal sealed class RetailWorldPacketCrypt
         {
             _serverEncrypt.Encrypt(
                 nonce,
-                plainFrame.Slice(HeaderBytes, bodyLength),
+                plainFrame.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, bodyLength),
                 ciphertext,
                 tag,
                 associatedData);
@@ -112,7 +107,7 @@ internal sealed class RetailWorldPacketCrypt
         Span<byte> destination = plainFrame;
 
         encryptedFrame.Slice(0, 4).CopyTo(destination.Slice(0, 4));
-        destination.Slice(4, TagBytes).Clear();
+        destination.Slice(4, WorldGatewayProtocolConstants.RetailWorldFrameTagBytes).Clear();
         ReadOnlySpan<byte> associatedData = (_useEmptyAad || !_useSizeAsAad)
             ? ReadOnlySpan<byte>.Empty
             : encryptedFrame.Slice(0, _aadSizeBytes);
@@ -124,9 +119,9 @@ internal sealed class RetailWorldPacketCrypt
         {
             _clientDecrypt.Decrypt(
                 nonce,
-                encryptedFrame.Slice(HeaderBytes, bodyLength),
-                encryptedFrame.Slice(4, TagBytes),
-                destination.Slice(HeaderBytes, bodyLength),
+                encryptedFrame.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, bodyLength),
+                encryptedFrame.Slice(4, WorldGatewayProtocolConstants.RetailWorldFrameTagBytes),
+                destination.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, bodyLength),
                 associatedData);
         }
         catch (CryptographicException ex)
@@ -146,21 +141,22 @@ internal sealed class RetailWorldPacketCrypt
         frameBytes = 0;
         error = null;
 
-        if (frame.Length < MinFrameBytes)
+        if (frame.Length < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes)
         {
             error = $"Retail world frame is too short: {frame.Length}.";
             return false;
         }
 
         uint body = BinaryPrimitives.ReadUInt32LittleEndian(frame.Slice(0, 4));
-        if (body < 4 || body > MaxFrameBytes)
+        if (body < WorldGatewayProtocolConstants.RetailWorldOpcodeBytes ||
+            body > WorldGatewayProtocolConstants.RetailWorldFrameMaxBytes)
         {
             error = $"Retail world frame has invalid body length: {body}.";
             return false;
         }
 
-        long total = HeaderBytes + (long)body;
-        if (total > int.MaxValue || total > MaxFrameBytes)
+        long total = WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes + (long)body;
+        if (total > int.MaxValue || total > WorldGatewayProtocolConstants.RetailWorldFrameMaxBytes)
         {
             error = $"Retail world frame has invalid total length: {total}.";
             return false;

@@ -8,7 +8,6 @@ public sealed partial class WorldProxyListener
 {
     private sealed partial class AcorePostAuthServerTranslator
     {
-        private const int MaxServerPacketSize = 16 * 1024 * 1024;
         private const int MaxBufferedFramesBeforeAuth = 32;
         private const int MaxBufferedBytesBeforeAuth = 256 * 1024;
 
@@ -317,7 +316,7 @@ public sealed partial class WorldProxyListener
                     }
 
                     int payloadBytes = packetSizeIncludingOpcode - 2;
-                    if (payloadBytes < 0 || payloadBytes > MaxServerPacketSize)
+                    if (payloadBytes < 0 || payloadBytes > WorldGatewayProtocolConstants.AcorePostAuthServerMaxPacketBytes)
                     {
                         error = $"Invalid AC server payload size in header: {payloadBytes}.";
                         return false;

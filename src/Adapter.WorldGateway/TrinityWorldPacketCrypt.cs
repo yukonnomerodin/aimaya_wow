@@ -6,12 +6,6 @@ namespace Adapter.WorldGateway;
 
 internal sealed class TrinityWorldPacketCrypt : IDisposable
 {
-    private const int NonceBytes = 12;
-    private const int HeaderBytes = 16;
-    private const int MinFrameBytes = 20;
-    private const int TagBytes = 12;
-    private const int MaxFrameBytes = 16 * 1024 * 1024;
-
     private AesGcm? _aes;
     private readonly bool _useSizeAsAad;
     private readonly bool _useEmptyAad;
@@ -57,7 +51,7 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
         }
 
         _aes?.Dispose();
-        _aes = new AesGcm(key32.ToArray(), TagBytes);
+        _aes = new AesGcm(key32.ToArray(), WorldGatewayProtocolConstants.RetailWorldFrameTagBytes);
     }
 
     public bool TryProtectServerFrame(
@@ -79,9 +73,9 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
         Span<byte> destination = protectedFrame;
 
         plainFrame.Slice(0, 4).CopyTo(destination.Slice(0, 4));
-        Span<byte> destinationTag = destination.Slice(4, TagBytes);
-        Span<byte> destinationBody = destination.Slice(HeaderBytes, bodyLength);
-        ReadOnlySpan<byte> plainBody = plainFrame.Slice(HeaderBytes, bodyLength);
+        Span<byte> destinationTag = destination.Slice(4, WorldGatewayProtocolConstants.RetailWorldFrameTagBytes);
+        Span<byte> destinationBody = destination.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, bodyLength);
+        ReadOnlySpan<byte> plainBody = plainFrame.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, bodyLength);
 
         if (_aes is null)
         {
@@ -91,7 +85,7 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
             return true;
         }
 
-        Span<byte> nonce = stackalloc byte[NonceBytes];
+        Span<byte> nonce = stackalloc byte[WorldGatewayProtocolConstants.RetailWorldFrameNonceBytes];
         WriteNonce(serverCounterUsed, _serverNonceMagic, nonce, _nonceLayout);
         ReadOnlySpan<byte> associatedData = (_useEmptyAad || !_useSizeAsAad)
             ? ReadOnlySpan<byte>.Empty
@@ -131,17 +125,17 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
         Span<byte> destination = plainFrame;
 
         wireFrame.Slice(0, 4).CopyTo(destination.Slice(0, 4));
-        destination.Slice(4, TagBytes).Clear();
-        Span<byte> destinationBody = destination.Slice(HeaderBytes, bodyLength);
+        destination.Slice(4, WorldGatewayProtocolConstants.RetailWorldFrameTagBytes).Clear();
+        Span<byte> destinationBody = destination.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, bodyLength);
 
         if (_aes is null)
         {
-            wireFrame.Slice(HeaderBytes, bodyLength).CopyTo(destinationBody);
+            wireFrame.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, bodyLength).CopyTo(destinationBody);
             _clientCounter++;
             return true;
         }
 
-        Span<byte> nonce = stackalloc byte[NonceBytes];
+        Span<byte> nonce = stackalloc byte[WorldGatewayProtocolConstants.RetailWorldFrameNonceBytes];
         WriteNonce(_clientCounter, _clientNonceMagic, nonce, _nonceLayout);
         ReadOnlySpan<byte> associatedData = (_useEmptyAad || !_useSizeAsAad)
             ? ReadOnlySpan<byte>.Empty
@@ -151,8 +145,8 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
         {
             _aes.Decrypt(
                 nonce,
-                wireFrame.Slice(HeaderBytes, bodyLength),
-                wireFrame.Slice(4, TagBytes),
+                wireFrame.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, bodyLength),
+                wireFrame.Slice(4, WorldGatewayProtocolConstants.RetailWorldFrameTagBytes),
                 destinationBody,
                 associatedData);
         }
@@ -179,21 +173,22 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
         frameBytes = 0;
         error = null;
 
-        if (frame.Length < MinFrameBytes)
+        if (frame.Length < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes)
         {
             error = $"Retail world frame is too short: {frame.Length}.";
             return false;
         }
 
         uint body = BinaryPrimitives.ReadUInt32LittleEndian(frame.Slice(0, 4));
-        if (body < 4 || body > MaxFrameBytes)
+        if (body < WorldGatewayProtocolConstants.RetailWorldOpcodeBytes ||
+            body > WorldGatewayProtocolConstants.RetailWorldFrameMaxBytes)
         {
             error = $"Retail world frame has invalid body length: {body}.";
             return false;
         }
 
-        long total = HeaderBytes + body;
-        if (total > int.MaxValue || total > MaxFrameBytes)
+        long total = WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes + body;
+        if (total > int.MaxValue || total > WorldGatewayProtocolConstants.RetailWorldFrameMaxBytes)
         {
             error = $"Retail world frame has invalid total length: {total}.";
             return false;
