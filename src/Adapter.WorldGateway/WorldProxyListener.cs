@@ -3071,7 +3071,7 @@ public sealed class WorldProxyListener : BackgroundService
                 addonInfo,
                 _options.AcoreClientBuild,
                 _options.AcoreRealmId);
-            byte[] frame = BuildAcoreClientFrame(AcoreOpcodeAuthSession, payload);
+            byte[] frame = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeAuthSession, payload);
             var authCrypt = new AuthCrypt();
             authCrypt.Init(account.SessionKey);
 
@@ -3107,19 +3107,6 @@ public sealed class WorldProxyListener : BackgroundService
         }
 
         return (0, "none");
-    }
-
-    private static byte[] BuildAcoreClientFrame(uint opcode, ReadOnlySpan<byte> payload)
-    {
-        ushort size = checked((ushort)(payload.Length + 4)); // opcode included
-        byte[] frame = GC.AllocateUninitializedArray<byte>(2 + 4 + payload.Length);
-        Span<byte> span = frame;
-
-        BinaryPrimitives.WriteUInt16BigEndian(span[..2], size);
-        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(2, 4), opcode);
-        payload.CopyTo(span.Slice(6, payload.Length));
-
-        return frame;
     }
 
     private static bool TryBuildRetailCompressedPacketFrame(
@@ -4968,7 +4955,7 @@ public sealed class WorldProxyListener : BackgroundService
                     return false;
                 }
 
-                byte[] mapped = BuildAcoreClientFrame(AcoreOpcodePing, payload[..8]);
+                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodePing, payload[..8]);
                 _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
                 output.Write(mapped);
                 bytesWritten = mapped.Length;
@@ -4986,7 +4973,7 @@ public sealed class WorldProxyListener : BackgroundService
             if (opcode == RetailOpcodeEnumCharacters)
             {
                 _onEnumCharactersRequest?.Invoke();
-                byte[] mapped = BuildAcoreClientFrame(AcoreOpcodeCharEnum, ReadOnlySpan<byte>.Empty);
+                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeCharEnum, ReadOnlySpan<byte>.Empty);
                 _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
                 output.Write(mapped);
                 bytesWritten = mapped.Length;
@@ -4995,7 +4982,7 @@ public sealed class WorldProxyListener : BackgroundService
 
             if (opcode == RetailOpcodeWarden3Data)
             {
-                byte[] mapped = BuildAcoreClientFrame(AcoreOpcodeWardenData, payload);
+                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeWardenData, payload);
                 _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
                 output.Write(mapped);
                 bytesWritten = mapped.Length;
@@ -5082,7 +5069,7 @@ public sealed class WorldProxyListener : BackgroundService
 
             if (opcode == RetailOpcodeKeepAlive)
             {
-                byte[] mapped = BuildAcoreClientFrame(AcoreOpcodeKeepAlive, ReadOnlySpan<byte>.Empty);
+                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeKeepAlive, ReadOnlySpan<byte>.Empty);
                 _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
                 output.Write(mapped);
                 bytesWritten = mapped.Length;
@@ -5097,7 +5084,7 @@ public sealed class WorldProxyListener : BackgroundService
                     return false;
                 }
 
-                byte[] mapped = BuildAcoreClientFrame(AcoreOpcodeTimeSyncResp, payload[..8]);
+                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeTimeSyncResp, payload[..8]);
                 _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
                 output.Write(mapped);
                 bytesWritten = mapped.Length;
@@ -5125,7 +5112,7 @@ public sealed class WorldProxyListener : BackgroundService
 
         private bool ForwardSyntheticAcoreCharEnumRequest(IBufferWriter<byte> output, out long bytesWritten)
         {
-            byte[] mapped = BuildAcoreClientFrame(AcoreOpcodeCharEnum, ReadOnlySpan<byte>.Empty);
+            byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeCharEnum, ReadOnlySpan<byte>.Empty);
             _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
             output.Write(mapped);
             bytesWritten = mapped.Length;
@@ -7345,6 +7332,7 @@ public sealed class WorldProxyListener : BackgroundService
         return IPAddress.Parse(address);
     }
 }
+
 
 
 
