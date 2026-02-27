@@ -56,13 +56,11 @@ internal static class AuthResponseFrameBuilder
             return true;
         }
 
-        const byte AuthOk = 0x0C;
-        const byte AuthWaitQueue = 0x1B;
-        const byte WotlkExpansion = 2;
-
         byte acResult = acPayload[0];
-        bool isAuthOk = acResult == AuthOk || probeMinimalSuccessNoAccountData;
-        bool isWaitQueue = !probeMinimalSuccessNoAccountData && acResult == AuthWaitQueue;
+        bool isAuthOk = acResult == WorldGatewayProtocolConstants.AuthResponseResultCodeAuthOk || probeMinimalSuccessNoAccountData;
+        bool isWaitQueue =
+            !probeMinimalSuccessNoAccountData &&
+            acResult == WorldGatewayProtocolConstants.AuthResponseResultCodeAuthWaitQueue;
         bool hasSuccessInfo = !probeMinimalSuccessNoAccountData && (isAuthOk || isWaitQueue);
         // Match Trinity behavior: WaitInfo is present only for queued logins.
         bool hasWaitInfo = !probeMinimalSuccessNoAccountData && isWaitQueue;
@@ -85,11 +83,11 @@ internal static class AuthResponseFrameBuilder
         uint billingTimeRemaining = acPayload.Length >= 5 ? BinaryPrimitives.ReadUInt32LittleEndian(acPayload.Slice(1, 4)) : 0u;
         uint billingTimeRested = acPayload.Length >= 10 ? BinaryPrimitives.ReadUInt32LittleEndian(acPayload.Slice(6, 4)) : 0u;
         byte accountExpansion = acPayload.Length >= 11
-            ? (byte)Math.Clamp(acPayload[10], (byte)0, WotlkExpansion)
-            : WotlkExpansion;
+            ? (byte)Math.Clamp(acPayload[10], (byte)0, WorldGatewayProtocolConstants.AuthResponseExpansionWotlk)
+            : WorldGatewayProtocolConstants.AuthResponseExpansionWotlk;
         if (accountExpansion == 0)
         {
-            accountExpansion = WotlkExpansion;
+            accountExpansion = WorldGatewayProtocolConstants.AuthResponseExpansionWotlk;
         }
 
         uint waitCount = acPayload.Length >= 15 ? BinaryPrimitives.ReadUInt32LittleEndian(acPayload.Slice(11, 4)) : 0u;
@@ -145,7 +143,7 @@ internal static class AuthResponseFrameBuilder
             payload.FlushBits();
 
             // Single VirtualRealmInfo
-            const string realmName = "AzerothCore";
+            const string realmName = WorldGatewayProtocolConstants.AuthResponseRealmNameAzerothCore;
             payload.WriteUInt32LE(virtualRealmAddress);
             payload.WriteBit(true);  // IsLocal
             payload.WriteBit(false); // IsInternalRealm
@@ -183,9 +181,9 @@ internal static class AuthResponseFrameBuilder
         uint billingTimeRemaining = acPayload.Length >= 5 ? BinaryPrimitives.ReadUInt32LittleEndian(acPayload.Slice(1, 4)) : 0u;
         uint billingTimeRested = acPayload.Length >= 10 ? BinaryPrimitives.ReadUInt32LittleEndian(acPayload.Slice(6, 4)) : 0u;
         uint virtualRealmAddress = WorldGatewayProtocolConstants.BuildRetailVirtualRealmAddress(acoreRealmId);
-        const byte ExpansionTww = 10;
-        const byte ExpansionWotlk = 2;
-        const string RealmName = "AIMAYA";
+        const byte ExpansionTww = WorldGatewayProtocolConstants.AuthResponseExpansionTww;
+        const byte ExpansionWotlk = WorldGatewayProtocolConstants.AuthResponseExpansionWotlk;
+        const string RealmName = WorldGatewayProtocolConstants.AuthResponseProbeRealmNameAimaya;
         long nowUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         byte topExpansionLevel = ExpansionTww;
         if (useAcoreExpansionLevels)

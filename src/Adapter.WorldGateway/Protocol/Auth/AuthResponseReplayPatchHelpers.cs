@@ -515,15 +515,12 @@ internal static class AuthResponseReplayPatchHelpers
 
     private static byte ResolveAcoreAccountExpansionLevel(ReadOnlySpan<byte> acPayload)
     {
-        const byte ExpansionTww = 10;
-        const byte ExpansionWotlk = 2;
-
         byte accountExpansion = acPayload.Length >= 11
-            ? (byte)Math.Clamp(acPayload[10], (byte)0, ExpansionTww)
-            : ExpansionWotlk;
+            ? (byte)Math.Clamp(acPayload[10], (byte)0, WorldGatewayProtocolConstants.AuthResponseExpansionTww)
+            : WorldGatewayProtocolConstants.AuthResponseExpansionWotlk;
         if (accountExpansion == 0)
         {
-            accountExpansion = ExpansionWotlk;
+            accountExpansion = WorldGatewayProtocolConstants.AuthResponseExpansionWotlk;
         }
 
         return accountExpansion;
@@ -534,9 +531,12 @@ internal static class AuthResponseReplayPatchHelpers
         return classId switch
         {
             1 or 2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or 11 => true, // Vanilla/WotLK-era classes
-            10 => accountExpansion >= 5, // Monk (MoP)
-            12 => accountExpansion >= 6, // Demon Hunter (Legion)
-            13 => accountExpansion >= 10, // Evoker (Dragonflight+)
+            WorldGatewayProtocolConstants.AuthResponseClassIdMonk =>
+                accountExpansion >= WorldGatewayProtocolConstants.AuthResponseClassMinExpansionMonk, // Monk (MoP)
+            WorldGatewayProtocolConstants.AuthResponseClassIdDemonHunter =>
+                accountExpansion >= WorldGatewayProtocolConstants.AuthResponseClassMinExpansionDemonHunter, // Demon Hunter (Legion)
+            WorldGatewayProtocolConstants.AuthResponseClassIdEvoker =>
+                accountExpansion >= WorldGatewayProtocolConstants.AuthResponseClassMinExpansionEvoker, // Evoker (Dragonflight+)
             _ => false
         };
     }
