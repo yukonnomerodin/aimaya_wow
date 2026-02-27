@@ -1070,57 +1070,11 @@ public sealed partial class WorldProxyListener : BackgroundService
 
         try
         {
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                TcpClient client;
-                try
-                {
-                    client = await _listener.AcceptTcpClientAsync(stoppingToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (ObjectDisposedException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
-
-                uint connectionId = unchecked((uint)Interlocked.Increment(ref _connectionSequence));
-                Task connectionTask = HandleConnectionAsync(client, connectionId, stoppingToken);
-
-                lock (_activeConnectionsLock)
-                {
-                    _activeConnections.Add(connectionTask);
-                }
-
-                _ = connectionTask.ContinueWith(
-                    _ =>
-                    {
-                        lock (_activeConnectionsLock)
-                        {
-                            _activeConnections.Remove(connectionTask);
-                        }
-                    },
-                    CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default);
-            }
+            await RunAcceptLoopAsync(stoppingToken).ConfigureAwait(false);
         }
         finally
         {
-            _listener.Stop();
-
-            Task[] pending;
-            lock (_activeConnectionsLock)
-            {
-                pending = _activeConnections.ToArray();
-            }
-
-            if (pending.Length > 0)
-            {
-                await Task.WhenAll(pending).ConfigureAwait(false);
-            }
+            await StopListenerAndAwaitActiveConnectionsAsync().ConfigureAwait(false);
         }
     }
 
