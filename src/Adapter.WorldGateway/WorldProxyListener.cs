@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.IO;
@@ -32,6 +33,17 @@ public sealed class WorldProxyListener : BackgroundService
     private const uint RetailOpcodeEnterEncryptedModeAck = 0x0041_0005;
     private const uint RetailOpcodePing = 0x0041_0006;
     private const uint RetailOpcodeLogDisconnect = 0x0041_0007;
+    private const uint RetailOpcodeCmsgDbQueryBulk = 0x0040_0010;
+    private const uint RetailOpcodeCmsgHotfixRequest = 0x0040_0011;
+    private const uint RetailOpcodeCmsgBattlePayGetProductList = 0x0040_00E9;
+    private const uint RetailOpcodeCmsgBattlePayGetPurchaseList = 0x0040_00EA;
+    private const uint RetailOpcodeCmsgGetUndeleteCharacterCooldownStatus = 0x0040_010F;
+    private const uint RetailOpcodeCmsgUpdateVasPurchaseStates = 0x0040_0123;
+    private const uint RetailOpcodeCmsgSocialContractRequest = 0x0040_0176;
+    private const uint RetailOpcodeCmsgQuickJoinAutoAcceptRequests = 0x0040_0132;
+    private const uint RetailOpcodeCmsgGetLastCatalogFetch = 0x0029_0036;
+    private const uint RetailOpcodeCmsgServerTimeOffsetRequest = 0x0040_00CA;
+    private const uint RetailOpcodeCmsgBattlenetRequest = 0x0040_0124;
     private const uint RetailOpcodeEnumCharacters = 0x0040_0014;
     private const uint RetailOpcodeWarden3Data = 0x0040_0018;
     private const uint RetailOpcodeCmsgAddonList = 0x0040_0004;
@@ -51,10 +63,17 @@ public sealed class WorldProxyListener : BackgroundService
     private const uint RetailOpcodeSmsgWarden3Data = 0x0042_000B;
     private const uint RetailOpcodeSmsgAddonListRequest = 0x0042_00EA;
     private const uint RetailOpcodeSmsgCacheVersion = 0x0046_000E;
+    private const uint RetailOpcodeSmsgDbReply = 0x0046_0000;
     private const uint RetailOpcodeSmsgAvailableHotfixes = 0x0046_0001;
+    private const uint RetailOpcodeSmsgHotfixConnect = 0x0046_0003;
     private const uint RetailOpcodeSmsgAccountDataTimes = 0x0042_01B4;
+    private const uint RetailOpcodeSmsgServerTimeOffset = 0x0042_01BE;
     private const uint RetailOpcodeSmsgTutorialFlags = 0x0042_0266;
+    private const uint RetailOpcodeSmsgAccountItemCollectionData = 0x0042_035B;
+    private const uint RetailOpcodeSmsgBattleNetResponse = 0x0042_02AD;
     private const uint RetailOpcodeSmsgBattleNetConnectionStatus = 0x0042_02AF;
+    private const uint RetailOpcodeSmsgUndeleteCooldownStatusResponse = 0x0042_0274;
+    private const uint RetailOpcodeSmsgSocialContractRequestResponse = 0x0042_0323;
     private const uint RetailOpcodeSmsgAuthSequencePrelude = 0x4077_0E75;
     private const uint AcoreOpcodeAuthSession = 0x0000_01ED;
     private const uint AcoreOpcodeCharEnum = 0x0000_0037;
@@ -230,6 +249,7 @@ public sealed class WorldProxyListener : BackgroundService
 
     private readonly object _activeConnectionsLock = new();
     private readonly List<Task> _activeConnections = new();
+    private readonly ConcurrentDictionary<string, long> _reconnectCooldownUntilByKey = new(StringComparer.OrdinalIgnoreCase);
     private TcpListener? _listener;
     private int _connectionSequence;
     private int _worldSessionMaterialTableEnsured;
@@ -1096,7 +1116,7 @@ public sealed class WorldProxyListener : BackgroundService
         }
 
         _logger.LogInformation(
-            "WorldProxy started on {ListenAddress}:{ListenPort} -> {UpstreamAddress}:{UpstreamPort} (Backlog={Backlog}, EnterEncryptedModeAckTimeoutMs={AckTimeoutMs}, EnterEncryptedModeAckGateEnabled={AckGateEnabled}, EffectiveAckGate={EffectiveAckGate}, EffectiveAckGateSource={EffectiveAckGateSource}, SuppressPostAuthBootstrapForProbe={SuppressBootstrap}, ProbeAuthResponseTwwAccountDataProfile={ProbeAuthResponseTwwAccountDataProfile}, ProbeAuthResponseTwwAddResultPrefix={ProbeAuthResponseTwwAddResultPrefix}, ProbeAuthResponseAvailableClassesCardinality={ProbeAuthResponseAvailableClassesCardinality}, ProbeAuthResponseTwwClassMatrixRows={ProbeAuthResponseTwwClassMatrixRows}, ProbeAuthResponseTwwUseAcoreExpansionLevels={ProbeAuthResponseTwwUseAcoreExpansionLevels}, ProbeInsertRetailSequencePreludeBeforeAuthResponse={ProbeInsertRetailSequencePreludeBeforeAuthResponse}, ProbeInsertRetailSequencePreludeAfterAuthResponse={ProbeInsertRetailSequencePreludeAfterAuthResponse}, ProbeReorderFirstDeferredFrameAfterPrelude={ProbeReorderFirstDeferredFrameAfterPrelude}, ProbeRetailSequencePreludePayloadHex={ProbeRetailSequencePreludePayloadHex}, ProbeAuthResponseOpcode=0x{ProbeAuthResponseOpcode:X8}, RetailAuthChallengeRandomizeDosBlock={RandomizeDosBlock}, EnterEncryptedModeSignatureFirst={SignatureFirst}, EnterEncryptedModeRegionGroup={RegionGroup}, EnterEncryptedModeIncludeRegionGroup={IncludeRegionGroup}, EnterEncryptedModeEnabled={Enabled}, EnterEncryptedModeEnabledAsByte={EnabledAsByte}, EnterEncryptedModeOpcode=0x{EnterEncryptedOpcode:X8}, EnterEncryptedModePreferBnetKeyData={PreferBnetKeyData}, EnableRetailWorldPacketCryptOnAck={EnableRetailWorldPacketCryptOnAck}, ForwardAcoreWardenAsRetailWarden3Data={ForwardAcoreWardenAsRetailWarden3Data}, ForwardAcoreAddonInfoAsRetailAddonListRequest={ForwardAcoreAddonInfoAsRetailAddonListRequest}, ForwardAcoreTutorialFlagsAsRetailTutorialFlags={ForwardAcoreTutorialFlagsAsRetailTutorialFlags}, RetailWorldPacketCryptServerInitialCounter={RetailWorldPacketCryptServerInitialCounter}, RetailWorldPacketCryptUseSizeAsAad={RetailWorldPacketCryptUseSizeAsAad}, RetailWorldPacketCryptAadSizeBytes={RetailWorldPacketCryptAadSizeBytes}, RetailWorldPacketCryptUseEmptyAad={RetailWorldPacketCryptUseEmptyAad}, RetailWorldPacketCryptNonceLayout={RetailWorldPacketCryptNonceLayout}, RetailWorldPacketCryptServerNonceMagic={RetailWorldPacketCryptServerNonceMagic}, RetailWorldPacketCryptClientNonceMagic={RetailWorldPacketCryptClientNonceMagic}, EnterEncryptedModeUseGoldenPayload={UseGoldenPayload}, EnterEncryptedModeGoldenMetadataPath={GoldenMetadataPath}, EnterEncryptedModeGoldenPatchRuntimeSignature={GoldenPatchRuntimeSignature}, EnterEncryptedModeParityGateEnabled={EnterEncryptedModeParityGateEnabled}, EnterEncryptedModeParityFixturePath={EnterEncryptedModeParityFixturePath}, ExposeRetailWorldEncryptKeyInProof={ExposeRetailWorldEncryptKeyInProof}, AuthAccountIdFallback={AuthAccountIdFallback}, EnableProofPack={EnableProofPack}, EnableHandshakeLabReport={EnableHandshakeLabReport}, ProofPackRootPath={ProofPackRootPath}, ScenarioId={ScenarioId}, PassThreshold={PassThreshold}, AckPolicy={AckPolicy}, AckPolicyDecisionPath={AckPolicyDecisionPath}, DeterministicReplayEnabled={DeterministicReplayEnabled}, HypothesisId={HypothesisId}, SingleChangedVariable={SingleChangedVariable}, ExpectedObservable={ExpectedObservable}, NextIsolationVariable={NextIsolationVariable}, FailureClassTarget={FailureClassTarget}, ActiveLayer={ActiveLayer}, ParityAxis={ParityAxis}, StrictStageEnforcement={StrictStageEnforcement})",
+            "WorldProxy started on {ListenAddress}:{ListenPort} -> {UpstreamAddress}:{UpstreamPort} (Backlog={Backlog}, EnterEncryptedModeAckTimeoutMs={AckTimeoutMs}, EnterEncryptedModeAckGateEnabled={AckGateEnabled}, EffectiveAckGate={EffectiveAckGate}, EffectiveAckGateSource={EffectiveAckGateSource}, SuppressPostAuthBootstrapForProbe={SuppressBootstrap}, ProbeAuthResponseTwwAccountDataProfile={ProbeAuthResponseTwwAccountDataProfile}, ProbeAuthResponseTwwAddResultPrefix={ProbeAuthResponseTwwAddResultPrefix}, ProbeAuthResponseAvailableClassesCardinality={ProbeAuthResponseAvailableClassesCardinality}, ProbeAuthResponseTwwClassMatrixRows={ProbeAuthResponseTwwClassMatrixRows}, ProbeAuthResponseTwwUseAcoreExpansionLevels={ProbeAuthResponseTwwUseAcoreExpansionLevels}, ProbeInsertRetailSequencePreludeBeforeAuthResponse={ProbeInsertRetailSequencePreludeBeforeAuthResponse}, ProbeInsertRetailSequencePreludeAfterAuthResponse={ProbeInsertRetailSequencePreludeAfterAuthResponse}, ProbeReorderFirstDeferredFrameAfterPrelude={ProbeReorderFirstDeferredFrameAfterPrelude}, ProbeRetailSequencePreludePayloadHex={ProbeRetailSequencePreludePayloadHex}, ProbeAuthResponseOpcode=0x{ProbeAuthResponseOpcode:X8}, RetailAuthChallengeRandomizeDosBlock={RandomizeDosBlock}, EnterEncryptedModeSignatureFirst={SignatureFirst}, EnterEncryptedModeRegionGroup={RegionGroup}, EnterEncryptedModeIncludeRegionGroup={IncludeRegionGroup}, EnterEncryptedModeEnabled={Enabled}, EnterEncryptedModeEnabledAsByte={EnabledAsByte}, EnterEncryptedModeOpcode=0x{EnterEncryptedOpcode:X8}, EnterEncryptedModePreferBnetKeyData={PreferBnetKeyData}, EnableRetailWorldPacketCryptOnAck={EnableRetailWorldPacketCryptOnAck}, ForwardAcoreWardenAsRetailWarden3Data={ForwardAcoreWardenAsRetailWarden3Data}, ForwardAcoreAddonInfoAsRetailAddonListRequest={ForwardAcoreAddonInfoAsRetailAddonListRequest}, ForwardAcoreTutorialFlagsAsRetailTutorialFlags={ForwardAcoreTutorialFlagsAsRetailTutorialFlags}, RetailWorldPacketCryptServerInitialCounter={RetailWorldPacketCryptServerInitialCounter}, RetailWorldPacketCryptUseSizeAsAad={RetailWorldPacketCryptUseSizeAsAad}, RetailWorldPacketCryptAadSizeBytes={RetailWorldPacketCryptAadSizeBytes}, RetailWorldPacketCryptUseEmptyAad={RetailWorldPacketCryptUseEmptyAad}, RetailWorldPacketCryptNonceLayout={RetailWorldPacketCryptNonceLayout}, RetailWorldPacketCryptServerNonceMagic={RetailWorldPacketCryptServerNonceMagic}, RetailWorldPacketCryptClientNonceMagic={RetailWorldPacketCryptClientNonceMagic}, ControlledUnlockEmptyCharEnumEnabled={ControlledUnlockEmptyCharEnumEnabled}, GlueSyntheticCharEnumKickMinIntervalMs={GlueSyntheticCharEnumKickMinIntervalMs}, ReconnectCooldownMs={ReconnectCooldownMs}, EnterEncryptedModeUseGoldenPayload={UseGoldenPayload}, EnterEncryptedModeGoldenMetadataPath={GoldenMetadataPath}, EnterEncryptedModeGoldenPatchRuntimeSignature={GoldenPatchRuntimeSignature}, EnterEncryptedModeParityGateEnabled={EnterEncryptedModeParityGateEnabled}, EnterEncryptedModeParityFixturePath={EnterEncryptedModeParityFixturePath}, ExposeRetailWorldEncryptKeyInProof={ExposeRetailWorldEncryptKeyInProof}, AuthAccountIdFallback={AuthAccountIdFallback}, EnableProofPack={EnableProofPack}, EnableHandshakeLabReport={EnableHandshakeLabReport}, ProofPackRootPath={ProofPackRootPath}, ScenarioId={ScenarioId}, PassThreshold={PassThreshold}, AckPolicy={AckPolicy}, AckPolicyDecisionPath={AckPolicyDecisionPath}, DeterministicReplayEnabled={DeterministicReplayEnabled}, HypothesisId={HypothesisId}, SingleChangedVariable={SingleChangedVariable}, ExpectedObservable={ExpectedObservable}, NextIsolationVariable={NextIsolationVariable}, FailureClassTarget={FailureClassTarget}, ActiveLayer={ActiveLayer}, ParityAxis={ParityAxis}, StrictStageEnforcement={StrictStageEnforcement})",
             bindAddress,
             _options.ListenPort,
             _options.UpstreamAddress,
@@ -1136,6 +1156,9 @@ public sealed class WorldProxyListener : BackgroundService
             _options.RetailWorldPacketCryptNonceLayout,
             _options.RetailWorldPacketCryptServerNonceMagic,
             _options.RetailWorldPacketCryptClientNonceMagic,
+            _options.ControlledUnlockEmptyCharEnumEnabled,
+            _options.GlueSyntheticCharEnumKickMinIntervalMs,
+            _options.ReconnectCooldownMs,
             _options.EnterEncryptedModeUseGoldenPayload,
             _options.EnterEncryptedModeGoldenMetadataPath,
             _options.EnterEncryptedModeGoldenPatchRuntimeSignature,
@@ -1221,6 +1244,7 @@ public sealed class WorldProxyListener : BackgroundService
         using (downstreamClient)
         {
             string downstreamRemote = downstreamClient.Client.RemoteEndPoint?.ToString() ?? "unknown";
+            string downstreamKey = ResolveDownstreamKey(downstreamClient.Client.RemoteEndPoint, downstreamRemote);
             downstreamClient.NoDelay = true;
             DateTimeOffset connectionOpenedAt = DateTimeOffset.UtcNow;
 
@@ -1228,6 +1252,17 @@ public sealed class WorldProxyListener : BackgroundService
                 "World connection opened: ConnectionId={ConnectionId}, Downstream={DownstreamRemote}",
                 connectionId,
                 downstreamRemote);
+
+            if (TryGetReconnectCooldownRemainingMs(downstreamKey, out int reconnectCooldownRemainingMs))
+            {
+                _logger.LogInformation(
+                    "[WorldProxy][ANTISPAM] Reconnect blocked by cooldown. ConnectionId={ConnectionId}, DownstreamKey={DownstreamKey}, RemainingMs={RemainingMs}, CooldownMs={CooldownMs}",
+                    connectionId,
+                    downstreamKey,
+                    reconnectCooldownRemainingMs,
+                    _options.ReconnectCooldownMs);
+                return;
+            }
 
             using var upstreamClient = new TcpClient(AddressFamily.InterNetwork);
             upstreamClient.NoDelay = true;
@@ -1318,6 +1353,7 @@ public sealed class WorldProxyListener : BackgroundService
                 "client->world",
                 downstreamReader,
                 upstreamWriter,
+                downstreamKey,
                 bridgeState,
                 relayCts.Token);
 
@@ -1326,6 +1362,7 @@ public sealed class WorldProxyListener : BackgroundService
                 "world->client",
                 upstreamReader,
                 downstreamWriter,
+                downstreamKey,
                 bridgeState,
                 relayCts.Token);
 
@@ -1436,6 +1473,67 @@ public sealed class WorldProxyListener : BackgroundService
         }
     }
 
+    private static string ResolveDownstreamKey(EndPoint? remoteEndPoint, string fallbackRemote)
+    {
+        if (remoteEndPoint is IPEndPoint ipEndpoint)
+        {
+            return ipEndpoint.Address.ToString();
+        }
+
+        return string.IsNullOrWhiteSpace(fallbackRemote) ? "unknown" : fallbackRemote;
+    }
+
+    private bool TryGetReconnectCooldownRemainingMs(string downstreamKey, out int remainingMs)
+    {
+        remainingMs = 0;
+
+        int cooldownMs = _options.ReconnectCooldownMs;
+        if (cooldownMs <= 0 || string.IsNullOrWhiteSpace(downstreamKey))
+        {
+            return false;
+        }
+
+        long nowUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if (!_reconnectCooldownUntilByKey.TryGetValue(downstreamKey, out long cooldownUntilUnixMs))
+        {
+            return false;
+        }
+
+        long deltaMs = cooldownUntilUnixMs - nowUnixMs;
+        if (deltaMs <= 0)
+        {
+            _reconnectCooldownUntilByKey.TryRemove(downstreamKey, out _);
+            return false;
+        }
+
+        remainingMs = deltaMs > int.MaxValue ? int.MaxValue : (int)deltaMs;
+        return true;
+    }
+
+    private void ArmReconnectCooldown(string downstreamKey, string source, uint? reason = null)
+    {
+        int cooldownMs = _options.ReconnectCooldownMs;
+        if (cooldownMs <= 0 || string.IsNullOrWhiteSpace(downstreamKey))
+        {
+            return;
+        }
+
+        long nowUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        long cooldownUntilUnixMs = checked(nowUnixMs + cooldownMs);
+        _reconnectCooldownUntilByKey.AddOrUpdate(
+            downstreamKey,
+            cooldownUntilUnixMs,
+            (_, existing) => Math.Max(existing, cooldownUntilUnixMs));
+
+        _logger.LogInformation(
+            "[WorldProxy][ANTISPAM] Reconnect cooldown armed. DownstreamKey={DownstreamKey}, CooldownMs={CooldownMs}, Source={Source}, Reason={Reason}, UntilUnixMs={UntilUnixMs}",
+            downstreamKey,
+            cooldownMs,
+            source,
+            reason.HasValue ? reason.Value.ToString(CultureInfo.InvariantCulture) : "<none>",
+            cooldownUntilUnixMs);
+    }
+
     private void ValidateProtocolExperimentContractOrThrow()
     {
         if (string.IsNullOrWhiteSpace(_protocolOptions.HypothesisId) ||
@@ -1465,6 +1563,7 @@ public sealed class WorldProxyListener : BackgroundService
         string direction,
         PipeReader reader,
         PipeWriter writer,
+        string downstreamKey,
         WorldProxyBridgeState bridgeState,
         CancellationToken cancellationToken)
     {
@@ -1538,6 +1637,11 @@ public sealed class WorldProxyListener : BackgroundService
                         onLogDisconnect: reason =>
                         {
                             bridgeState.SetLogDisconnectReason(reason);
+                            ArmReconnectCooldown(
+                                downstreamKey,
+                                source: "cmsg_log_disconnect",
+                                reason: reason);
+                            bridgeState.MarkClientRequestedDisconnect();
                             _logger.LogInformation(
                                 "[WorldProxy][MAP] Retail CMSG_LOG_DISCONNECT received. ConnectionId={ConnectionId}, Reason={Reason}",
                                 connectionId,
@@ -1605,6 +1709,15 @@ public sealed class WorldProxyListener : BackgroundService
                                     connectionId,
                                     opcode);
                             }
+                        },
+                        glueSyntheticCharEnumKickMinIntervalMs: _options.GlueSyntheticCharEnumKickMinIntervalMs,
+                        onGlueSyntheticKickSuppressed: (opcode, waitMs) =>
+                        {
+                            _logger.LogInformation(
+                                "[WorldProxy][GLUE] Synthetic CHAR_ENUM kick throttled. ConnectionId={ConnectionId}, TriggerOpcode=0x{Opcode:X8}, WaitMs={WaitMs}",
+                                connectionId,
+                                opcode,
+                                waitMs);
                         });
                     _logger.LogInformation(
                         "[WorldProxy][MAP] Retail->AC post-auth translator enabled. ConnectionId={ConnectionId}",
@@ -1667,6 +1780,7 @@ public sealed class WorldProxyListener : BackgroundService
                         probeTutorialFlagsPayload: _probeTutorialFlagsPayload,
                         probeBattleNetConnectionStatusPayload: _probeBattleNetConnectionStatusPayload,
                         acoreRealmId: _options.AcoreRealmId,
+                        controlledUnlockEmptyCharEnumEnabled: _options.ControlledUnlockEmptyCharEnumEnabled,
                         forwardAcoreWardenAsRetailWarden3Data: _options.ForwardAcoreWardenAsRetailWarden3Data,
                         forwardAcoreAddonInfoAsRetailAddonListRequest: _options.ForwardAcoreAddonInfoAsRetailAddonListRequest,
                         forwardAcoreTutorialFlagsAsRetailTutorialFlags: _options.ForwardAcoreTutorialFlagsAsRetailTutorialFlags,
@@ -1734,6 +1848,14 @@ public sealed class WorldProxyListener : BackgroundService
                                     connectionId,
                                     bridgeState.CurrentStage);
                             }
+                        },
+                        onControlledUnlockApplied: (acPayloadBytes, retailPayloadBytes) =>
+                        {
+                            _logger.LogInformation(
+                                "[WorldProxy][UNLOCK] Controlled empty-char enum unlock applied. ConnectionId={ConnectionId}, AcorePayloadBytes={AcorePayloadBytes}, RetailPayloadBytes={RetailPayloadBytes}",
+                                connectionId,
+                                acPayloadBytes,
+                                retailPayloadBytes);
                         },
                         onFrameDecoded: (opcode, payloadBytes) =>
                         {
@@ -2128,6 +2250,16 @@ public sealed class WorldProxyListener : BackgroundService
                 FlushResult flushResult = await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
                 if (flushResult.IsCanceled || flushResult.IsCompleted)
                 {
+                    reader.AdvanceTo(buffer.End);
+                    break;
+                }
+
+                if (direction == "client->world" && bridgeState.ConsumeClientRequestedDisconnect())
+                {
+                    _logger.LogInformation(
+                        "[WorldProxy][MAP] Client requested world disconnect. ConnectionId={ConnectionId}, Direction={Direction}. Ending relay side.",
+                        connectionId,
+                        direction);
                     reader.AdvanceTo(buffer.End);
                     break;
                 }
@@ -5437,6 +5569,59 @@ public sealed class WorldProxyListener : BackgroundService
         return BuildRetailWorldFrame(RetailOpcodeSmsgFeatureSystemStatusGlueScreen, payload.WrittenSpan);
     }
 
+    private static byte[] BuildRetailEmptyEnumCharactersResultFrame()
+    {
+        // Trinity 12.x EnumCharactersResult layout for empty list.
+        // Controlled unlock variant uses permissive unlock metadata to keep character creation UI enabled.
+        // This path is used only for AC empty char-list payloads under explicit config flag.
+        var payload = new BitPackedBufferWriter(initialCapacity: 320);
+        ReadOnlySpan<byte> unlockedRaces =
+        [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+            22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 34, 35, 36, 37
+        ];
+
+        payload.WriteBit(true);  // Success
+        payload.WriteBit(false); // Realmless
+        payload.WriteBit(false); // IsDeletedCharacters
+        payload.WriteBit(true);  // IgnoreNewPlayerRestrictions
+        payload.WriteBit(false); // IsRestrictedNewPlayer
+        payload.WriteBit(true);  // IsNewcomerChatCompleted
+        payload.WriteBit(false); // IsRestrictedTrial
+        payload.WriteBit(false); // IsAccountLapsedPlayer
+        payload.WriteBit(true);  // ClassDisableMask present (Trinity initializes Optional<uint32>)
+        payload.WriteBit(false); // ForceCharacterListSort
+        payload.FlushBits();
+
+        payload.WriteUInt32LE(0); // Characters size
+        payload.WriteUInt32LE(0); // RegionwideCharacters size
+        payload.WriteInt32LE(80); // MaxCharacterLevel
+        payload.WriteUInt32LE((uint)unlockedRaces.Length); // RaceUnlockData size
+        payload.WriteUInt32LE(0); // UnlockedConditionalAppearances size
+        payload.WriteUInt32LE(0); // RaceLimitDisables size
+        payload.WriteUInt32LE(0); // WarbandGroups size
+        payload.WriteUInt32LE(0); // ClassDisableMask value
+
+        for (int i = 0; i < unlockedRaces.Length; i++)
+        {
+            payload.WriteByte(unlockedRaces[i]); // RaceID
+            payload.WriteUInt32LE(1); // ClassUnlocks size
+            payload.WriteBit(true);   // HasUnlockedLicense
+            payload.WriteBit(true);   // HasUnlockedAchievement
+            payload.WriteBit(false);  // HasHeritageArmorUnlockAchievement
+            payload.WriteBit(false);  // HideRaceOnClient
+            payload.WriteBit(false);  // FactionBalanceDisabled
+            payload.FlushBits();
+
+            payload.WriteByte(1);     // ClassID (Warrior)
+            payload.WriteUInt32LE(0); // AchievementID
+            payload.WriteBit(true);   // HasUnlockedAchievement
+            payload.FlushBits();
+        }
+
+        return BuildRetailWorldFrame(RetailOpcodeSmsgEnumCharactersResult, payload.WrittenSpan);
+    }
+
     private static byte[] BuildRetailMirrorVarsFrame()
     {
         (string Name, string Value)[] vars =
@@ -5526,6 +5711,97 @@ public sealed class WorldProxyListener : BackgroundService
         return BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetConnectionStatus, payload.WrittenSpan);
     }
 
+    private static byte[] BuildRetailAccountItemCollectionDataFrame()
+    {
+        // Trinity 12.x CollectionPackets::AccountItemCollectionData::Write
+        // with empty warband-scene collection.
+        var payload = new BitPackedBufferWriter(initialCapacity: 10);
+        payload.WriteUInt32LE(0); // Unknown1110_1
+        payload.WriteByte(7); // Type = ItemCollectionType::WarbandScene
+        payload.WriteUInt32LE(0); // Items count
+        payload.WriteBit(false); // Unknown1110_2
+        payload.FlushBits();
+        return BuildRetailWorldFrame(RetailOpcodeSmsgAccountItemCollectionData, payload.WrittenSpan);
+    }
+
+    private static byte[] BuildRetailSocialContractRequestResponseFrame(bool showSocialContract)
+    {
+        var payload = new BitPackedBufferWriter(initialCapacity: 1);
+        payload.WriteBit(showSocialContract);
+        payload.FlushBits();
+        return BuildRetailWorldFrame(RetailOpcodeSmsgSocialContractRequestResponse, payload.WrittenSpan);
+    }
+
+    private static byte[] BuildRetailUndeleteCooldownStatusResponseFrame(
+        uint maxCooldownSeconds,
+        uint currentCooldownSeconds,
+        bool onCooldown)
+    {
+        var payload = new BitPackedBufferWriter(initialCapacity: 9);
+        payload.WriteUInt32LE(maxCooldownSeconds);
+        payload.WriteUInt32LE(currentCooldownSeconds);
+        payload.WriteBit(onCooldown);
+        payload.FlushBits();
+        return BuildRetailWorldFrame(RetailOpcodeSmsgUndeleteCooldownStatusResponse, payload.WrittenSpan);
+    }
+
+    private static byte[] BuildRetailDbReplyFrame(
+        uint tableHash,
+        int recordId,
+        uint timestamp,
+        byte status,
+        ReadOnlySpan<byte> data)
+    {
+        var payload = new BitPackedBufferWriter(initialCapacity: 20 + data.Length);
+        payload.WriteUInt32LE(tableHash);
+        payload.WriteInt32LE(recordId);
+        payload.WriteUInt32LE(timestamp);
+        payload.WriteBits((ulong)(status & 0x07), 3); // DB2Manager::HotfixRecord::Status (3 bits)
+        payload.WriteUInt32LE((uint)data.Length);
+        if (!data.IsEmpty)
+        {
+            payload.WriteBytes(data);
+        }
+
+        return BuildRetailWorldFrame(RetailOpcodeSmsgDbReply, payload.WrittenSpan);
+    }
+
+    private static byte[] BuildRetailBattleNetResponseFrame(
+        ulong methodType,
+        ulong objectId,
+        uint token,
+        uint statusCode,
+        ReadOnlySpan<byte> data)
+    {
+        var payload = new BitPackedBufferWriter(initialCapacity: 28 + data.Length);
+        payload.WriteUInt32LE(statusCode);
+        payload.WriteUInt64LE(methodType);
+        payload.WriteUInt64LE(objectId);
+        payload.WriteUInt32LE(token);
+        payload.WriteUInt32LE((uint)data.Length);
+        if (!data.IsEmpty)
+        {
+            payload.WriteBytes(data);
+        }
+
+        return BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetResponse, payload.WrittenSpan);
+    }
+
+    private static byte[] BuildRetailServerTimeOffsetFrame(long unixTimeSeconds)
+    {
+        var payload = new BitPackedBufferWriter(initialCapacity: sizeof(long));
+        payload.WriteInt64LE(unixTimeSeconds);
+        return BuildRetailWorldFrame(RetailOpcodeSmsgServerTimeOffset, payload.WrittenSpan);
+    }
+
+    private static byte[] BuildRetailHotfixConnectFrame()
+    {
+        var payload = new BitPackedBufferWriter(initialCapacity: 8);
+        payload.WriteUInt32LE(0); // Hotfixes count
+        payload.WriteUInt32LE(0); // HotfixContent size
+        return BuildRetailWorldFrame(RetailOpcodeSmsgHotfixConnect, payload.WrittenSpan);
+    }
+
     private static bool TryDecodeAzerothAuthChallenge(ReadOnlySequence<byte> buffer, out AcoreAuthChallengeDump dump)
     {
         dump = default;
@@ -5577,6 +5853,7 @@ public sealed class WorldProxyListener : BackgroundService
         private const int RetailOuterHeaderBytes = 16;
         private const int RetailHeaderBytes = 20;
         private const int MaxRetailFrameBytes = 4 * 1024 * 1024;
+        private const int MaxDbQueryBulkRecords = 4096;
 
         private readonly AuthCrypt _authCrypt;
         private readonly WorldProxyBridgeState _bridgeState;
@@ -5587,11 +5864,14 @@ public sealed class WorldProxyListener : BackgroundService
         private readonly Action? _onEnumCharactersRequest;
         private readonly Action? _onEnterEncryptedModeAck;
         private readonly Action<uint>? _onPostAckNonAckClientFrame;
+        private readonly int _glueSyntheticCharEnumKickMinIntervalMs;
+        private readonly Action<uint, int>? _onGlueSyntheticKickSuppressed;
 
         private int _sizePrefixRead;
         private byte[] _frameBuffer = Array.Empty<byte>();
         private int _frameBytesRead;
         private int _frameExpectedBytes;
+        private long _lastGlueSyntheticKickUnixMs = long.MinValue;
 
         public RetailPostAuthClientTranslator(
             AuthCrypt authCrypt,
@@ -5600,7 +5880,9 @@ public sealed class WorldProxyListener : BackgroundService
             Action<uint>? onLogDisconnect = null,
             Action? onEnumCharactersRequest = null,
             Action? onEnterEncryptedModeAck = null,
-            Action<uint>? onPostAckNonAckClientFrame = null)
+            Action<uint>? onPostAckNonAckClientFrame = null,
+            int glueSyntheticCharEnumKickMinIntervalMs = 0,
+            Action<uint, int>? onGlueSyntheticKickSuppressed = null)
         {
             _authCrypt = authCrypt ?? throw new ArgumentNullException(nameof(authCrypt));
             _bridgeState = bridgeState ?? throw new ArgumentNullException(nameof(bridgeState));
@@ -5609,6 +5891,8 @@ public sealed class WorldProxyListener : BackgroundService
             _onEnumCharactersRequest = onEnumCharactersRequest;
             _onEnterEncryptedModeAck = onEnterEncryptedModeAck;
             _onPostAckNonAckClientFrame = onPostAckNonAckClientFrame;
+            _glueSyntheticCharEnumKickMinIntervalMs = Math.Clamp(glueSyntheticCharEnumKickMinIntervalMs, 0, 5000);
+            _onGlueSyntheticKickSuppressed = onGlueSyntheticKickSuppressed;
         }
 
         public bool TryTransform(
@@ -5778,6 +6062,77 @@ public sealed class WorldProxyListener : BackgroundService
                 return true;
             }
 
+            if (opcode == RetailOpcodeCmsgGetUndeleteCharacterCooldownStatus)
+            {
+                _bridgeState.MarkPendingUndeleteCooldownStatusRequest();
+                return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
+            }
+
+            if (opcode == RetailOpcodeCmsgSocialContractRequest)
+            {
+                _bridgeState.MarkPendingSocialContractRequest();
+                return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
+            }
+
+            if (opcode == RetailOpcodeCmsgDbQueryBulk)
+            {
+                if (TryParseRetailDbQueryBulk(payload, out ParsedDbQueryBulk query, out _))
+                {
+                    _bridgeState.EnqueuePendingDbQueryBulkReplies(query.TableHash, query.RecordIds);
+                }
+                else if (_loggedDroppedOpcodes.Add(opcode))
+                {
+                    onDroppedOpcode?.Invoke(opcode, payloadBytes);
+                }
+
+                return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
+            }
+
+            if (opcode == RetailOpcodeCmsgHotfixRequest)
+            {
+                _bridgeState.MarkPendingHotfixRequest();
+                return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
+            }
+
+            if (opcode == RetailOpcodeCmsgServerTimeOffsetRequest)
+            {
+                _bridgeState.MarkPendingServerTimeOffsetRequest();
+                return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
+            }
+
+            if (opcode == RetailOpcodeCmsgBattlenetRequest)
+            {
+                if (TryParseRetailBattlenetRequest(payload, out ParsedBattlenetRequest request, out _))
+                {
+                    _bridgeState.EnqueuePendingBattleNetResponse(
+                        request.MethodType,
+                        request.ObjectId,
+                        request.Token);
+                }
+                else if (_loggedDroppedOpcodes.Add(opcode))
+                {
+                    onDroppedOpcode?.Invoke(opcode, payloadBytes);
+                }
+
+                return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
+            }
+
+            if (opcode == RetailOpcodeCmsgBattlePayGetPurchaseList ||
+                opcode == RetailOpcodeCmsgBattlePayGetProductList ||
+                opcode == RetailOpcodeCmsgUpdateVasPurchaseStates ||
+                opcode == RetailOpcodeCmsgQuickJoinAutoAcceptRequests ||
+                opcode == RetailOpcodeCmsgGetLastCatalogFetch)
+            {
+                if (_bridgeState.CurrentStage >= BridgeStage.CHAR_ENUM_RECEIVED)
+                {
+                    // After first char-enum is already delivered, these glue opcodes are noise
+                    // (TC commonly ignores them). Do not trigger extra synthetic enum turns.
+                    return true;
+                }
+
+                return TryKickGlueResponseTurn(output, opcode, out bytesWritten);
+            }
+
             if (opcode == RetailOpcodeCmsgAddonList)
             {
                 // AC receives addon metadata inside CMSG_AUTH_SESSION payload.
@@ -5827,6 +6182,165 @@ public sealed class WorldProxyListener : BackgroundService
 
             return true;
         }
+
+        private bool ForwardSyntheticAcoreCharEnumRequest(IBufferWriter<byte> output, out long bytesWritten)
+        {
+            byte[] mapped = BuildAcoreClientFrame(AcoreOpcodeCharEnum, ReadOnlySpan<byte>.Empty);
+            _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
+            output.Write(mapped);
+            bytesWritten = mapped.Length;
+            return true;
+        }
+
+        private bool TryKickGlueResponseTurn(IBufferWriter<byte> output, uint triggerOpcode, out long bytesWritten)
+        {
+            bytesWritten = 0;
+
+            bool bypassThrottle = triggerOpcode == RetailOpcodeCmsgDbQueryBulk ||
+                                  triggerOpcode == RetailOpcodeCmsgBattlenetRequest ||
+                                  triggerOpcode == RetailOpcodeCmsgServerTimeOffsetRequest ||
+                                  triggerOpcode == RetailOpcodeCmsgHotfixRequest ||
+                                  triggerOpcode == RetailOpcodeCmsgBattlePayGetPurchaseList ||
+                                  triggerOpcode == RetailOpcodeCmsgBattlePayGetProductList ||
+                                  triggerOpcode == RetailOpcodeCmsgUpdateVasPurchaseStates ||
+                                  triggerOpcode == RetailOpcodeCmsgQuickJoinAutoAcceptRequests ||
+                                  triggerOpcode == RetailOpcodeCmsgGetLastCatalogFetch ||
+                                  triggerOpcode == RetailOpcodeCmsgSocialContractRequest ||
+                                  triggerOpcode == RetailOpcodeCmsgGetUndeleteCharacterCooldownStatus;
+
+            if (!bypassThrottle &&
+                _glueSyntheticCharEnumKickMinIntervalMs > 0 &&
+                _lastGlueSyntheticKickUnixMs != long.MinValue)
+            {
+                long nowUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                long elapsedMs = nowUnixMs - _lastGlueSyntheticKickUnixMs;
+                if (elapsedMs >= 0 && elapsedMs < _glueSyntheticCharEnumKickMinIntervalMs)
+                {
+                    int waitMs = checked((int)(_glueSyntheticCharEnumKickMinIntervalMs - elapsedMs));
+                    _onGlueSyntheticKickSuppressed?.Invoke(triggerOpcode, waitMs);
+                    return true;
+                }
+            }
+
+            if (!_bridgeState.TryArmPendingGlueKick())
+            {
+                return true;
+            }
+
+            bool forwarded = ForwardSyntheticAcoreCharEnumRequest(output, out bytesWritten);
+            if (forwarded)
+            {
+                _lastGlueSyntheticKickUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            }
+
+            return forwarded;
+        }
+
+        private static bool TryParseRetailDbQueryBulk(
+            ReadOnlySpan<byte> payload,
+            out ParsedDbQueryBulk query,
+            out string? error)
+        {
+            query = default;
+            error = null;
+
+            if (payload.Length < 6)
+            {
+                error = $"DB_QUERY_BULK payload too short: {payload.Length}.";
+                return false;
+            }
+
+            uint tableHash = BinaryPrimitives.ReadUInt32LittleEndian(payload[..4]);
+            ReadOnlySpan<byte> packed = payload[4..];
+            int bitOffset = 0;
+            if (!TryReadBitsMsbFirst(packed, ref bitOffset, 13, out ulong queryCountRaw))
+            {
+                error = "Failed to read DB_QUERY_BULK query count.";
+                return false;
+            }
+
+            if (queryCountRaw > MaxDbQueryBulkRecords)
+            {
+                error = $"DB_QUERY_BULK query count is out of range: {queryCountRaw}.";
+                return false;
+            }
+
+            int queryCount = (int)queryCountRaw;
+            int byteOffset = (bitOffset + 7) / 8;
+            int bytesNeeded = checked(queryCount * sizeof(int));
+            if (packed.Length - byteOffset < bytesNeeded)
+            {
+                error = $"DB_QUERY_BULK payload truncated. QueryCount={queryCount}, Available={packed.Length - byteOffset}, Needed={bytesNeeded}.";
+                return false;
+            }
+
+            int[] recordIds = GC.AllocateUninitializedArray<int>(queryCount);
+            for (int i = 0; i < queryCount; i++)
+            {
+                int offset = byteOffset + (i * sizeof(int));
+                recordIds[i] = BinaryPrimitives.ReadInt32LittleEndian(packed.Slice(offset, sizeof(int)));
+            }
+
+            query = new ParsedDbQueryBulk(tableHash, recordIds);
+            return true;
+        }
+
+        private static bool TryReadBitsMsbFirst(ReadOnlySpan<byte> payload, ref int bitOffset, int bitCount, out ulong value)
+        {
+            value = 0;
+            if (bitCount < 0 || bitCount > 64)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < bitCount; i++)
+            {
+                int absoluteBit = bitOffset + i;
+                int byteIndex = absoluteBit / 8;
+                if (byteIndex >= payload.Length)
+                {
+                    return false;
+                }
+
+                int bitIndexInByte = 7 - (absoluteBit % 8);
+                int bit = (payload[byteIndex] >> bitIndexInByte) & 1;
+                value = (value << 1) | (uint)bit;
+            }
+
+            bitOffset += bitCount;
+            return true;
+        }
+
+        private static bool TryParseRetailBattlenetRequest(
+            ReadOnlySpan<byte> payload,
+            out ParsedBattlenetRequest request,
+            out string? error)
+        {
+            request = default;
+            error = null;
+
+            if (payload.Length < 24)
+            {
+                error = $"CMSG_BATTLENET_REQUEST payload too short: {payload.Length}.";
+                return false;
+            }
+
+            ulong methodType = BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]);
+            ulong objectId = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(8, 8));
+            uint token = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(16, 4));
+            uint protoSize = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(20, 4));
+            if (payload.Length < 24 + protoSize)
+            {
+                error = $"CMSG_BATTLENET_REQUEST payload truncated. ProtoSize={protoSize}, PayloadBytes={payload.Length}.";
+                return false;
+            }
+
+            request = new ParsedBattlenetRequest(methodType, objectId, token);
+            return true;
+        }
+
+        private readonly record struct ParsedDbQueryBulk(uint TableHash, int[] RecordIds);
+        private readonly record struct ParsedBattlenetRequest(ulong MethodType, ulong ObjectId, uint Token);
     }
 
     private sealed class AcorePostAuthServerTranslator
@@ -5885,6 +6399,7 @@ public sealed class WorldProxyListener : BackgroundService
         private readonly byte[] _probeTutorialFlagsPayload;
         private readonly byte[] _probeBattleNetConnectionStatusPayload;
         private readonly uint _acoreRealmId;
+        private readonly bool _controlledUnlockEmptyCharEnumEnabled;
         private readonly bool _effectiveSuppressPostAuthBootstrapForProbe;
         private readonly bool _forwardAcoreWardenAsRetailWarden3Data;
         private readonly bool _forwardAcoreAddonInfoAsRetailAddonListRequest;
@@ -5896,6 +6411,7 @@ public sealed class WorldProxyListener : BackgroundService
         private readonly Action<int, string>? _onBootstrapFlushedWithoutAck;
         private readonly Action<int, string>? _onBootstrapSuppressedForProbe;
         private readonly Action? _onCharEnumReceived;
+        private readonly Action<int, int>? _onControlledUnlockApplied;
         private readonly Action<ushort, int>? _onFrameDecoded;
         private readonly Action<ushort, int>? _onDroppedOpcode;
         private readonly HashSet<ushort> _loggedDroppedOpcodes = new();
@@ -5964,6 +6480,7 @@ public sealed class WorldProxyListener : BackgroundService
             byte[]? probeTutorialFlagsPayload = null,
             byte[]? probeBattleNetConnectionStatusPayload = null,
             uint acoreRealmId = 1,
+            bool controlledUnlockEmptyCharEnumEnabled = false,
             bool forwardAcoreWardenAsRetailWarden3Data = false,
             bool forwardAcoreAddonInfoAsRetailAddonListRequest = false,
             bool forwardAcoreTutorialFlagsAsRetailTutorialFlags = false,
@@ -5974,6 +6491,7 @@ public sealed class WorldProxyListener : BackgroundService
             Action<int, string>? onBootstrapFlushedWithoutAck = null,
             Action<int, string>? onBootstrapSuppressedForProbe = null,
             Action? onCharEnumReceived = null,
+            Action<int, int>? onControlledUnlockApplied = null,
             Action<ushort, int>? onFrameDecoded = null,
             Action<ushort, int>? onDroppedOpcode = null)
         {
@@ -6053,6 +6571,7 @@ public sealed class WorldProxyListener : BackgroundService
                 ? probeBattleNetConnectionStatusPayload.ToArray()
                 : Array.Empty<byte>();
             _acoreRealmId = acoreRealmId == 0 ? 1u : acoreRealmId;
+            _controlledUnlockEmptyCharEnumEnabled = controlledUnlockEmptyCharEnumEnabled;
             _effectiveSuppressPostAuthBootstrapForProbe =
                 suppressPostAuthBootstrapForProbe && !probeBareAuthResponseOnly;
             _forwardAcoreWardenAsRetailWarden3Data = forwardAcoreWardenAsRetailWarden3Data;
@@ -6065,6 +6584,7 @@ public sealed class WorldProxyListener : BackgroundService
             _onBootstrapFlushedWithoutAck = onBootstrapFlushedWithoutAck;
             _onBootstrapSuppressedForProbe = onBootstrapSuppressedForProbe;
             _onCharEnumReceived = onCharEnumReceived;
+            _onControlledUnlockApplied = onControlledUnlockApplied;
             _onFrameDecoded = onFrameDecoded;
             _onDroppedOpcode = onDroppedOpcode;
             _statefulCompressedAuthResponseCompressor =
@@ -6661,14 +7181,164 @@ public sealed class WorldProxyListener : BackgroundService
 
             if (opcode == AcoreOpcodeSmsgCharEnum)
             {
-                byte[] mapped = BuildRetailWorldFrame(RetailOpcodeSmsgEnumCharactersResult, payload);
-                bool written = TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
-                if (written)
+                bool syntheticGlueTurn = _bridgeState.ConsumePendingGlueKick();
+                bool isEmptyAcoreCharEnum = payload.Length == 1 && payload[0] == 0;
+                bool suppressSyntheticEmptyRefresh =
+                    syntheticGlueTurn &&
+                    _controlledUnlockEmptyCharEnumEnabled &&
+                    isEmptyAcoreCharEnum;
+
+                bytesWritten = 0;
+                bool wroteCharEnumToClient = false;
+                if (!suppressSyntheticEmptyRefresh)
                 {
+                    byte[] mapped = BuildRetailWorldFrame(RetailOpcodeSmsgEnumCharactersResult, payload);
+                    if (_controlledUnlockEmptyCharEnumEnabled &&
+                        TryBuildControlledUnlockEmptyCharEnumFrame(payload, out byte[] unlockedMapped))
+                    {
+                        mapped = unlockedMapped;
+                        _onControlledUnlockApplied?.Invoke(payload.Length, Math.Max(0, mapped.Length - 20));
+                    }
+
+                    if (!TryWriteRetailServerFrame(mapped, output, out long charEnumBytes, out error))
+                    {
+                        return false;
+                    }
+
+                    bytesWritten += charEnumBytes;
+                    wroteCharEnumToClient = true;
                     _onCharEnumReceived?.Invoke();
+
+                    if (!TryWriteRetailServerFrame(
+                            BuildRetailAccountItemCollectionDataFrame(),
+                            output,
+                            out long accountCollectionBytes,
+                            out string? accountCollectionError))
+                    {
+                        error = accountCollectionError ?? "Failed to write synthetic SMSG_ACCOUNT_ITEM_COLLECTION_DATA.";
+                        return false;
+                    }
+
+                    bytesWritten += accountCollectionBytes;
                 }
 
-                return written;
+                if (wroteCharEnumToClient || syntheticGlueTurn)
+                {
+                    bool shouldSendSocialContractResponse = _bridgeState.ConsumePendingSocialContractRequest();
+                    bool shouldSendUndeleteCooldownStatusResponse = _bridgeState.ConsumePendingUndeleteCooldownStatusRequest();
+                    bool shouldSendHotfixConnect = _bridgeState.ConsumePendingHotfixRequest();
+                    bool shouldSendServerTimeOffset = _bridgeState.ConsumePendingServerTimeOffsetRequest();
+
+                    // Emit pending glue responses in the same turn as enum refresh.
+                    if (shouldSendSocialContractResponse)
+                    {
+                        if (!TryWriteRetailServerFrame(
+                                BuildRetailSocialContractRequestResponseFrame(showSocialContract: false),
+                                output,
+                                out long socialBytes,
+                                out string? socialError))
+                        {
+                            error = socialError ?? "Failed to write synthetic SMSG_SOCIAL_CONTRACT_REQUEST_RESPONSE.";
+                            return false;
+                        }
+
+                        bytesWritten += socialBytes;
+                    }
+
+                    if (shouldSendUndeleteCooldownStatusResponse)
+                    {
+                        if (!TryWriteRetailServerFrame(
+                                BuildRetailUndeleteCooldownStatusResponseFrame(
+                                    maxCooldownSeconds: 0u,
+                                    currentCooldownSeconds: 0u,
+                                    onCooldown: false),
+                                output,
+                                out long undeleteBytes,
+                                out string? undeleteError))
+                        {
+                            error = undeleteError ?? "Failed to write synthetic SMSG_UNDELETE_COOLDOWN_STATUS_RESPONSE.";
+                            return false;
+                        }
+
+                        bytesWritten += undeleteBytes;
+                    }
+
+                    if (shouldSendHotfixConnect)
+                    {
+                        if (!TryWriteRetailServerFrame(
+                                BuildRetailHotfixConnectFrame(),
+                                output,
+                                out long hotfixBytes,
+                                out string? hotfixError))
+                        {
+                            error = hotfixError ?? "Failed to write synthetic SMSG_HOTFIX_CONNECT.";
+                            return false;
+                        }
+
+                        bytesWritten += hotfixBytes;
+                    }
+
+                    while (_bridgeState.TryDequeuePendingBattleNetResponse(out ulong methodType, out ulong objectId, out uint token))
+                    {
+                        if (!TryWriteRetailServerFrame(
+                                BuildRetailBattleNetResponseFrame(
+                                    methodType: methodType,
+                                    objectId: objectId,
+                                    token: token,
+                                    statusCode: 0u,
+                                    data: ReadOnlySpan<byte>.Empty),
+                                output,
+                                out long battleNetBytes,
+                                out string? battleNetError))
+                        {
+                            error = battleNetError ?? "Failed to write synthetic SMSG_BATTLENET_RESPONSE.";
+                            return false;
+                        }
+
+                        bytesWritten += battleNetBytes;
+                    }
+
+                    if (shouldSendServerTimeOffset)
+                    {
+                        if (!TryWriteRetailServerFrame(
+                                BuildRetailServerTimeOffsetFrame(DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
+                                output,
+                                out long serverTimeBytes,
+                                out string? serverTimeError))
+                        {
+                            error = serverTimeError ?? "Failed to write synthetic SMSG_SERVER_TIME_OFFSET.";
+                            return false;
+                        }
+
+                        bytesWritten += serverTimeBytes;
+                    }
+
+                    uint dbReplyTimestamp = checked((uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                    while (_bridgeState.TryDequeuePendingDbQueryBulkReplies(out uint tableHash, out int[] recordIds))
+                    {
+                        for (int i = 0; i < recordIds.Length; i++)
+                        {
+                            if (!TryWriteRetailServerFrame(
+                                    BuildRetailDbReplyFrame(
+                                        tableHash: tableHash,
+                                        recordId: recordIds[i],
+                                        timestamp: dbReplyTimestamp,
+                                        status: 3, // DB2Manager::HotfixRecord::Status::Invalid
+                                        data: ReadOnlySpan<byte>.Empty),
+                                    output,
+                                    out long dbReplyBytes,
+                                    out string? dbReplyError))
+                            {
+                                error = dbReplyError ?? "Failed to write synthetic SMSG_DB_REPLY.";
+                                return false;
+                            }
+
+                            bytesWritten += dbReplyBytes;
+                        }
+                    }
+                }
+
+                return true;
             }
 
             if (opcode == AcoreOpcodeSmsgTimeSyncRequest)
@@ -6740,6 +7410,23 @@ public sealed class WorldProxyListener : BackgroundService
                 _onDroppedOpcode?.Invoke(opcode, payload.Length);
             }
 
+            return true;
+        }
+
+        private static bool TryBuildControlledUnlockEmptyCharEnumFrame(
+            ReadOnlySpan<byte> acPayload,
+            out byte[] retailFrame)
+        {
+            retailFrame = Array.Empty<byte>();
+
+            // AzerothCore 3.3.5a SMSG_CHAR_ENUM encodes char count in the first byte.
+            // We only override the known empty-list case (count=0, payload length=1).
+            if (acPayload.Length != 1 || acPayload[0] != 0)
+            {
+                return false;
+            }
+
+            retailFrame = BuildRetailEmptyEnumCharactersResultFrame();
             return true;
         }
 
@@ -7391,12 +8078,28 @@ public sealed class WorldProxyListener : BackgroundService
             }
         }
 
+        public void WriteBytes(ReadOnlySpan<byte> value)
+        {
+            EnsureByteAligned();
+            EnsureCapacity(value.Length);
+            value.CopyTo(_buffer.AsSpan(_position, value.Length));
+            _position += value.Length;
+        }
+
         public void WriteUInt32LE(uint value)
         {
             EnsureByteAligned();
             EnsureCapacity(4);
             BinaryPrimitives.WriteUInt32LittleEndian(_buffer.AsSpan(_position, 4), value);
             _position += 4;
+        }
+
+        public void WriteUInt64LE(ulong value)
+        {
+            EnsureByteAligned();
+            EnsureCapacity(8);
+            BinaryPrimitives.WriteUInt64LittleEndian(_buffer.AsSpan(_position, 8), value);
+            _position += 8;
         }
 
         public void WriteInt32LE(int value)
@@ -9121,6 +9824,14 @@ internal sealed class WorldProxyBridgeState
     private long _postAckNonAckBootstrapTriggerWaitMs = -1;
     private int _preAckProtectedFramesSeen;
     private int _postAckProtectedFramesSeen;
+    private readonly Queue<PendingDbQueryBulkReplies> _pendingDbQueryBulkReplies = new();
+    private readonly Queue<PendingBattleNetResponse> _pendingBattleNetResponses = new();
+    private bool _pendingSocialContractRequest;
+    private bool _pendingUndeleteCooldownStatusRequest;
+    private bool _pendingHotfixRequest;
+    private bool _pendingServerTimeOffsetRequest;
+    private bool _pendingGlueKick;
+    private int _clientRequestedDisconnect;
 
     public WorldProxyBridgeState(
         ILogger<WorldProxyListener> logger,
@@ -9456,8 +10167,8 @@ internal sealed class WorldProxyBridgeState
             BridgeStage.ENTER_ENCRYPTED_SENT => next == BridgeStage.WORLD_CRYPT_ACTIVE || next == BridgeStage.BOOTSTRAP_FLUSHED,
             BridgeStage.WORLD_CRYPT_ACTIVE => next == BridgeStage.BOOTSTRAP_FLUSHED,
             BridgeStage.BOOTSTRAP_FLUSHED => next == BridgeStage.CHAR_ENUM_REQUESTED,
-            BridgeStage.CHAR_ENUM_REQUESTED => next == BridgeStage.CHAR_ENUM_RECEIVED,
-            BridgeStage.CHAR_ENUM_RECEIVED => false,
+            BridgeStage.CHAR_ENUM_REQUESTED => next == BridgeStage.CHAR_ENUM_REQUESTED || next == BridgeStage.CHAR_ENUM_RECEIVED,
+            BridgeStage.CHAR_ENUM_RECEIVED => next == BridgeStage.CHAR_ENUM_REQUESTED,
             _ => false
         };
     }
@@ -10070,6 +10781,16 @@ internal sealed class WorldProxyBridgeState
         }
     }
 
+    public void MarkClientRequestedDisconnect()
+    {
+        Volatile.Write(ref _clientRequestedDisconnect, 1);
+    }
+
+    public bool ConsumeClientRequestedDisconnect()
+    {
+        return Interlocked.Exchange(ref _clientRequestedDisconnect, 0) == 1;
+    }
+
     public void SetProofPackArtifacts(string hexPath, string metadataPath, string diffPath)
     {
         lock (_enterEncryptedSync)
@@ -10154,6 +10875,169 @@ internal sealed class WorldProxyBridgeState
             {
                 return _awaitingTimeoutMs;
             }
+        }
+    }
+
+    public void EnqueuePendingDbQueryBulkReplies(uint tableHash, int[] recordIds)
+    {
+        ArgumentNullException.ThrowIfNull(recordIds);
+
+        int[] copy = GC.AllocateUninitializedArray<int>(recordIds.Length);
+        recordIds.AsSpan().CopyTo(copy);
+
+        lock (_enterEncryptedSync)
+        {
+            _pendingDbQueryBulkReplies.Enqueue(new PendingDbQueryBulkReplies(tableHash, copy));
+        }
+    }
+
+    public bool TryDequeuePendingDbQueryBulkReplies(out uint tableHash, out int[] recordIds)
+    {
+        lock (_enterEncryptedSync)
+        {
+            if (_pendingDbQueryBulkReplies.Count > 0)
+            {
+                PendingDbQueryBulkReplies next = _pendingDbQueryBulkReplies.Dequeue();
+                tableHash = next.TableHash;
+                recordIds = next.RecordIds;
+                return true;
+            }
+        }
+
+        tableHash = 0;
+        recordIds = Array.Empty<int>();
+        return false;
+    }
+
+    public void EnqueuePendingBattleNetResponse(ulong methodType, ulong objectId, uint token)
+    {
+        lock (_enterEncryptedSync)
+        {
+            _pendingBattleNetResponses.Enqueue(new PendingBattleNetResponse(methodType, objectId, token));
+        }
+    }
+
+    public bool TryDequeuePendingBattleNetResponse(out ulong methodType, out ulong objectId, out uint token)
+    {
+        lock (_enterEncryptedSync)
+        {
+            if (_pendingBattleNetResponses.Count > 0)
+            {
+                PendingBattleNetResponse next = _pendingBattleNetResponses.Dequeue();
+                methodType = next.MethodType;
+                objectId = next.ObjectId;
+                token = next.Token;
+                return true;
+            }
+        }
+
+        methodType = 0;
+        objectId = 0;
+        token = 0;
+        return false;
+    }
+
+    public void MarkPendingSocialContractRequest()
+    {
+        lock (_enterEncryptedSync)
+        {
+            _pendingSocialContractRequest = true;
+        }
+    }
+
+    public bool ConsumePendingSocialContractRequest()
+    {
+        lock (_enterEncryptedSync)
+        {
+            bool pending = _pendingSocialContractRequest;
+            _pendingSocialContractRequest = false;
+            return pending;
+        }
+    }
+
+    public void MarkPendingUndeleteCooldownStatusRequest()
+    {
+        lock (_enterEncryptedSync)
+        {
+            _pendingUndeleteCooldownStatusRequest = true;
+        }
+    }
+
+    public bool ConsumePendingUndeleteCooldownStatusRequest()
+    {
+        lock (_enterEncryptedSync)
+        {
+            bool pending = _pendingUndeleteCooldownStatusRequest;
+            _pendingUndeleteCooldownStatusRequest = false;
+            return pending;
+        }
+    }
+
+    public void MarkPendingHotfixRequest()
+    {
+        lock (_enterEncryptedSync)
+        {
+            _pendingHotfixRequest = true;
+        }
+    }
+
+    public bool ConsumePendingHotfixRequest()
+    {
+        lock (_enterEncryptedSync)
+        {
+            bool pending = _pendingHotfixRequest;
+            _pendingHotfixRequest = false;
+            return pending;
+        }
+    }
+
+    public void MarkPendingServerTimeOffsetRequest()
+    {
+        lock (_enterEncryptedSync)
+        {
+            _pendingServerTimeOffsetRequest = true;
+        }
+    }
+
+    public bool ConsumePendingServerTimeOffsetRequest()
+    {
+        lock (_enterEncryptedSync)
+        {
+            bool pending = _pendingServerTimeOffsetRequest;
+            _pendingServerTimeOffsetRequest = false;
+            return pending;
+        }
+    }
+
+    public bool TryArmPendingGlueKick()
+    {
+        lock (_enterEncryptedSync)
+        {
+            if (_pendingGlueKick)
+            {
+                return false;
+            }
+
+            _pendingGlueKick = true;
+            return true;
+        }
+    }
+
+    public bool ConsumePendingGlueKick()
+    {
+        lock (_enterEncryptedSync)
+        {
+            bool pending = _pendingGlueKick;
+            _pendingGlueKick = false;
+            return pending;
+        }
+    }
+
+    public void ClearPendingGlueKick()
+    {
+        lock (_enterEncryptedSync)
+        {
+            _pendingGlueKick = false;
         }
     }
 
@@ -10342,6 +11226,9 @@ internal sealed class WorldProxyBridgeState
         fixturePath = null;
         return false;
     }
+
+    private readonly record struct PendingDbQueryBulkReplies(uint TableHash, int[] RecordIds);
+    private readonly record struct PendingBattleNetResponse(ulong MethodType, ulong ObjectId, uint Token);
 }
 
 internal readonly record struct RetailAuthSessionFrame(
@@ -10819,6 +11706,14 @@ public sealed class WorldProxyOptions
     public bool ForwardAcoreAddonInfoAsRetailAddonListRequest { get; init; } = false;
 
     public bool ForwardAcoreTutorialFlagsAsRetailTutorialFlags { get; init; } = false;
+
+    public bool ControlledUnlockEmptyCharEnumEnabled { get; init; } = false;
+
+    [Range(0, 5000)]
+    public int GlueSyntheticCharEnumKickMinIntervalMs { get; init; } = 0;
+
+    [Range(0, 120000)]
+    public int ReconnectCooldownMs { get; init; } = 0;
 
     [Range(0, int.MaxValue)]
     public int RetailWorldPacketCryptServerInitialCounter { get; init; } = 0;
