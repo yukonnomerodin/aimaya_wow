@@ -35,21 +35,6 @@ public sealed partial class WorldProxyListener : BackgroundService
     private static readonly byte[] ServerConnectionInitializer = Encoding.ASCII.GetBytes("WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT - V2\n");
     private static readonly byte[] ClientConnectionInitializer = Encoding.ASCII.GetBytes("WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER - V2\n");
     private const int TrinityCompressionThresholdBytes = 0x400;
-    private const int AuthResponseReplayOptionalBitsOffset = 4;
-    private const byte AuthResponseReplaySuccessInfoMask = 0x80;
-    private const byte AuthResponseReplayWaitInfoMask = 0x40;
-    private const byte AuthResponseReplaySuccessInfoCurrentBuildMask = 0x04;
-    private const uint AuthResponseReplayCurrentBuildValue = 66102;
-    private const int AuthResponseReplayWaitInfoPayloadBytes = 10;
-    private const int AuthResponseReplaySuccessInfoOffset = 5;
-    private const int AuthResponseReplayTopVirtualRealmAddressOffset = AuthResponseReplaySuccessInfoOffset + 0;
-    private const int AuthResponseReplayActiveExpansionLevelOffset = AuthResponseReplaySuccessInfoOffset + 12;
-    private const int AuthResponseReplayAccountExpansionLevelOffset = AuthResponseReplaySuccessInfoOffset + 13;
-    private const int AuthResponseReplayAvailableClassesCountOffset = AuthResponseReplaySuccessInfoOffset + 18;
-    private const int AuthResponseReplayClassMatrixStartOffset = AuthResponseReplaySuccessInfoOffset + 38;
-    private const uint AuthResponseReplayMaxAvailableClassesRows = 4096;
-    private const uint AuthResponseReplayMaxClassRowsPerRace = 4096;
-    private const int AuthResponseReplayTimeFieldOffset = AuthResponseReplaySuccessInfoOffset + 30;
     private readonly ILogger<WorldProxyListener> _logger;
     private readonly WorldProxyOptions _options;
     private readonly ProtocolEngineeringOptions _protocolOptions;
@@ -501,15 +486,15 @@ public sealed partial class WorldProxyListener : BackgroundService
             {
                 _logger.LogWarning(
                     "WorldProxy probe enabled: AUTH_RESPONSE replay payload runtime patch active (Time field at payload offset {Offset} is overwritten with current unix time per frame).",
-                    AuthResponseReplayTimeFieldOffset);
+                    WorldGatewayProtocolConstants.AuthResponseReplayTimeFieldOffset);
             }
 
             if (_probeAuthResponseReplayPatchExpansionLevelsToRuntimeAccount)
             {
                 _logger.LogWarning(
                     "WorldProxy probe enabled: AUTH_RESPONSE replay payload runtime patch active (Active/AccountExpansionLevel at payload offsets {ActiveOffset}/{AccountOffset} are overwritten from AC account expansion per frame).",
-                    AuthResponseReplayActiveExpansionLevelOffset,
-                    AuthResponseReplayAccountExpansionLevelOffset);
+                    WorldGatewayProtocolConstants.AuthResponseReplayActiveExpansionLevelOffset,
+                    WorldGatewayProtocolConstants.AuthResponseReplayAccountExpansionLevelOffset);
             }
 
             if (_probeAuthResponseReplayPatchClassMatrixExpansionTripletsToRuntimeAccount)
@@ -528,7 +513,7 @@ public sealed partial class WorldProxyListener : BackgroundService
             {
                 _logger.LogWarning(
                     "WorldProxy probe enabled: AUTH_RESPONSE replay payload runtime patch active (SuccessInfo optional CurrentBuild field is forced present and set to {Build}).",
-                    AuthResponseReplayCurrentBuildValue);
+                    WorldGatewayProtocolConstants.AuthResponseReplayCurrentBuildValue);
             }
 
             if (_probeAuthResponseReplayPatchWaitInfoPresent)

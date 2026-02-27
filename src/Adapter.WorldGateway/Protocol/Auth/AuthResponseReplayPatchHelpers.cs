@@ -4,21 +4,21 @@ namespace Adapter.WorldGateway;
 
 internal static class AuthResponseReplayPatchHelpers
 {
-    private const int OptionalBitsOffset = 4;
-    private const byte SuccessInfoMask = 0x80;
-    private const byte WaitInfoMask = 0x40;
-    private const byte SuccessInfoCurrentBuildMask = 0x04;
-    private const uint CurrentBuildValue = 66102;
-    private const int WaitInfoPayloadBytes = 10;
-    private const int SuccessInfoOffset = 5;
-    private const int TopVirtualRealmAddressOffset = SuccessInfoOffset + 0;
-    private const int ActiveExpansionLevelOffset = SuccessInfoOffset + 12;
-    private const int AccountExpansionLevelOffset = SuccessInfoOffset + 13;
-    private const int AvailableClassesCountOffset = SuccessInfoOffset + 18;
-    private const int ClassMatrixStartOffset = SuccessInfoOffset + 38;
-    private const uint MaxAvailableClassesRows = 4096;
-    private const uint MaxClassRowsPerRace = 4096;
-    private const int TimeFieldOffset = SuccessInfoOffset + 30;
+    private const int OptionalBitsOffset = WorldGatewayProtocolConstants.AuthResponseReplayOptionalBitsOffset;
+    private const byte SuccessInfoMask = WorldGatewayProtocolConstants.AuthResponseReplaySuccessInfoMask;
+    private const byte WaitInfoMask = WorldGatewayProtocolConstants.AuthResponseReplayWaitInfoMask;
+    private const byte SuccessInfoCurrentBuildMask = WorldGatewayProtocolConstants.AuthResponseReplaySuccessInfoCurrentBuildMask;
+    private const uint CurrentBuildValue = WorldGatewayProtocolConstants.AuthResponseReplayCurrentBuildValue;
+    private const int WaitInfoPayloadBytes = WorldGatewayProtocolConstants.AuthResponseReplayWaitInfoPayloadBytes;
+    private const int SuccessInfoOffset = WorldGatewayProtocolConstants.AuthResponseReplaySuccessInfoOffset;
+    private const int TopVirtualRealmAddressOffset = WorldGatewayProtocolConstants.AuthResponseReplayTopVirtualRealmAddressOffset;
+    private const int ActiveExpansionLevelOffset = WorldGatewayProtocolConstants.AuthResponseReplayActiveExpansionLevelOffset;
+    private const int AccountExpansionLevelOffset = WorldGatewayProtocolConstants.AuthResponseReplayAccountExpansionLevelOffset;
+    private const int AvailableClassesCountOffset = WorldGatewayProtocolConstants.AuthResponseReplayAvailableClassesCountOffset;
+    private const int ClassMatrixStartOffset = WorldGatewayProtocolConstants.AuthResponseReplayClassMatrixStartOffset;
+    private const uint MaxAvailableClassesRows = WorldGatewayProtocolConstants.AuthResponseReplayMaxAvailableClassesRows;
+    private const uint MaxClassRowsPerRace = WorldGatewayProtocolConstants.AuthResponseReplayMaxClassRowsPerRace;
+    private const int TimeFieldOffset = WorldGatewayProtocolConstants.AuthResponseReplayTimeFieldOffset;
 
     public static bool TryPatchTopVirtualRealmAddressFromRuntimeRealm(
         ReadOnlySpan<byte> payload,
@@ -188,8 +188,8 @@ internal static class AuthResponseReplayPatchHelpers
         }
 
         // GameTimeInfo fixed fields + flushed optional bits byte.
-        const int GameTimeFixedBytes = 12;
-        const int GameTimeFlagsBytes = 1;
+        const int GameTimeFixedBytes = WorldGatewayProtocolConstants.AuthResponseReplayGameTimeFixedBytes;
+        const int GameTimeFlagsBytes = WorldGatewayProtocolConstants.AuthResponseReplayGameTimeFlagsBytes;
         if (cursor + GameTimeFixedBytes + GameTimeFlagsBytes > payload.Length)
         {
             error = $"AUTH_RESPONSE replay payload truncated at GameTimeInfo block: cursor={cursor}, len={payload.Length}.";

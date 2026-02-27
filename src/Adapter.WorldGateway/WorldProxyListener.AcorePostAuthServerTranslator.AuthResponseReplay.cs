@@ -41,7 +41,7 @@ public sealed partial class WorldProxyListener
                 _authResponseFuzzMutation,
                 _probeAuthResponseOpcode,
                 _acoreRealmId,
-                AuthResponseReplayCurrentBuildValue,
+                WorldGatewayProtocolConstants.AuthResponseReplayCurrentBuildValue,
                 out mapped,
                 out error);
         }
