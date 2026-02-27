@@ -25,21 +25,7 @@ public sealed partial class WorldProxyListener
             {
                 if (opcode != AcoreOpcodeSmsgAuthResponse)
                 {
-                    if (_bufferedBeforeAuth.Count >= MaxBufferedFramesBeforeAuth ||
-                        _bufferedBeforeAuthBytes + payload.Length > MaxBufferedBytesBeforeAuth)
-                    {
-                        if (_loggedDroppedOpcodes.Add(opcode))
-                        {
-                            _onDroppedOpcode?.Invoke(opcode, payload.Length);
-                        }
-
-                        return true;
-                    }
-
-                    byte[] payloadCopy = GC.AllocateUninitializedArray<byte>(payload.Length);
-                    payload.CopyTo(payloadCopy);
-                    _bufferedBeforeAuth.Add(new BufferedServerFrame(opcode, payloadCopy));
-                    _bufferedBeforeAuthBytes += payload.Length;
+                    TryBufferOrDropPreAuthFrame(opcode, payload);
                     return true;
                 }
 
