@@ -205,6 +205,77 @@ internal static class HandshakeDiagnosticsWriters
             Error: null);
     }
 
+    public static DeferredFrameParityResult EvaluateFirstDeferredFrameParity(
+        string? fixturePathOption,
+        ReadOnlySpan<byte> actualFrame,
+        string projectRoot)
+    {
+        if (string.IsNullOrWhiteSpace(fixturePathOption))
+        {
+            return new DeferredFrameParityResult(
+                Status: "fixture_not_configured",
+                FixturePath: null,
+                DiffOffset: null,
+                ExpectedBytes: null,
+                ActualBytes: null);
+        }
+
+        string fixturePath = fixturePathOption;
+        if (!Path.IsPathRooted(fixturePath))
+        {
+            fixturePath = Path.Combine(projectRoot, fixturePath);
+        }
+
+        if (!TryLoadHexPayloadFromFile(
+                fixturePath,
+                projectRoot,
+                out byte[] expectedFrame,
+                out string? loadError,
+                out string? resolvedPath))
+        {
+            return new DeferredFrameParityResult(
+                Status: "fixture_load_error",
+                FixturePath: resolvedPath ?? fixturePath,
+                DiffOffset: null,
+                ExpectedBytes: loadError,
+                ActualBytes: null);
+        }
+
+        int compareLength = Math.Min(expectedFrame.Length, actualFrame.Length);
+        int? diffOffset = null;
+        for (int idx = 0; idx < compareLength; idx++)
+        {
+            if (expectedFrame[idx] != actualFrame[idx])
+            {
+                diffOffset = idx;
+                break;
+            }
+        }
+
+        if (!diffOffset.HasValue && expectedFrame.Length != actualFrame.Length)
+        {
+            diffOffset = compareLength;
+        }
+
+        if (!diffOffset.HasValue)
+        {
+            return new DeferredFrameParityResult(
+                Status: "match",
+                FixturePath: resolvedPath ?? fixturePath,
+                DiffOffset: null,
+                ExpectedBytes: null,
+                ActualBytes: null);
+        }
+
+        int offset = diffOffset.Value;
+        return new DeferredFrameParityResult(
+            Status: "mismatch",
+            FixturePath: resolvedPath ?? fixturePath,
+            DiffOffset: offset,
+            ExpectedBytes: BuildHexWindow(expectedFrame, offset),
+            ActualBytes: BuildHexWindow(actualFrame, offset));
+    }
+
     public static AuthChallengeProofArtifacts WriteAuthChallengeProofPack(
         uint connectionId,
         string runlogsDir,
@@ -694,6 +765,47 @@ internal static class HandshakeDiagnosticsWriters
         }
     }
 
+    private static bool TryLoadHexPayloadFromFile(
+        string rawPath,
+        string projectRoot,
+        out byte[] payload,
+        out string? error,
+        out string? resolvedPath)
+    {
+        payload = Array.Empty<byte>();
+        error = null;
+        resolvedPath = null;
+
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            error = "empty payload path";
+            return false;
+        }
+
+        resolvedPath = Path.IsPathRooted(rawPath)
+            ? rawPath
+            : Path.Combine(projectRoot, rawPath);
+
+        if (!File.Exists(resolvedPath))
+        {
+            error = "payload file not found";
+            return false;
+        }
+
+        string text;
+        try
+        {
+            text = File.ReadAllText(resolvedPath, Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            error = $"failed to read payload file: {ex.Message}";
+            return false;
+        }
+
+        return TryParseHexPayload(text, resolvedPath, out payload, out error);
+    }
+
     private static string ResolveFixturePath(WorldProxyOptions options, string projectRoot)
     {
         string preferred = Path.Combine(projectRoot, options.ProofPackRootPath, "fixtures", "enter_encrypted_mode.synthetic.v1.json");
@@ -726,5 +838,17 @@ internal static class HandshakeDiagnosticsWriters
         }
 
         return true;
+    }
+
+    private static string BuildHexWindow(ReadOnlySpan<byte> bytes, int startOffset)
+    {
+        if (bytes.IsEmpty)
+        {
+            return "<empty>";
+        }
+
+        int start = Math.Max(0, Math.Min(startOffset, bytes.Length - 1));
+        int length = Math.Min(16, bytes.Length - start);
+        return Convert.ToHexString(bytes.Slice(start, length));
     }
 }

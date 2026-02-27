@@ -2684,7 +2684,10 @@ public sealed class WorldProxyListener : BackgroundService
 
                                 if (frameIndex == 0)
                                 {
-                                    deferredParity = EvaluateFirstDeferredFrameParity(_options, protectedFrame);
+                                    deferredParity = HandshakeDiagnosticsWriters.EvaluateFirstDeferredFrameParity(
+                                        _options.ProbeFirstDeferredFrameParityFixturePath,
+                                        protectedFrame,
+                                        ResolveProjectRoot());
                                     bool parityConfigured = !string.IsNullOrWhiteSpace(_options.ProbeFirstDeferredFrameParityFixturePath);
                                     bool parityPassed = !parityConfigured ||
                                         string.Equals(deferredParity.Status, "match", StringComparison.OrdinalIgnoreCase);
@@ -8446,87 +8449,6 @@ public sealed class WorldProxyListener : BackgroundService
         }
 
         return false;
-    }
-
-    private static DeferredFrameParityResult EvaluateFirstDeferredFrameParity(
-        WorldProxyOptions options,
-        ReadOnlySpan<byte> actualFrame)
-    {
-        if (string.IsNullOrWhiteSpace(options.ProbeFirstDeferredFrameParityFixturePath))
-        {
-            return new DeferredFrameParityResult(
-                Status: "fixture_not_configured",
-                FixturePath: null,
-                DiffOffset: null,
-                ExpectedBytes: null,
-                ActualBytes: null);
-        }
-
-        string fixturePath = options.ProbeFirstDeferredFrameParityFixturePath;
-        if (!Path.IsPathRooted(fixturePath))
-        {
-            fixturePath = Path.Combine(ResolveProjectRoot(), fixturePath);
-        }
-
-        if (!TryLoadHexPayloadFromFile(
-                fixturePath,
-                out byte[] expectedFrame,
-                out string? loadError,
-                out string? resolvedPath))
-        {
-            return new DeferredFrameParityResult(
-                Status: "fixture_load_error",
-                FixturePath: resolvedPath ?? fixturePath,
-                DiffOffset: null,
-                ExpectedBytes: loadError,
-                ActualBytes: null);
-        }
-
-        int compareLength = Math.Min(expectedFrame.Length, actualFrame.Length);
-        int? diffOffset = null;
-        for (int idx = 0; idx < compareLength; idx++)
-        {
-            if (expectedFrame[idx] != actualFrame[idx])
-            {
-                diffOffset = idx;
-                break;
-            }
-        }
-
-        if (!diffOffset.HasValue && expectedFrame.Length != actualFrame.Length)
-        {
-            diffOffset = compareLength;
-        }
-
-        if (!diffOffset.HasValue)
-        {
-            return new DeferredFrameParityResult(
-                Status: "match",
-                FixturePath: resolvedPath ?? fixturePath,
-                DiffOffset: null,
-                ExpectedBytes: null,
-                ActualBytes: null);
-        }
-
-        int offset = diffOffset.Value;
-        return new DeferredFrameParityResult(
-            Status: "mismatch",
-            FixturePath: resolvedPath ?? fixturePath,
-            DiffOffset: offset,
-            ExpectedBytes: BuildHexWindow(expectedFrame, offset),
-            ActualBytes: BuildHexWindow(actualFrame, offset));
-    }
-
-    private static string BuildHexWindow(ReadOnlySpan<byte> bytes, int startOffset)
-    {
-        if (bytes.IsEmpty)
-        {
-            return "<empty>";
-        }
-
-        int start = Math.Max(0, Math.Min(startOffset, bytes.Length - 1));
-        int length = Math.Min(16, bytes.Length - start);
-        return Convert.ToHexString(bytes.Slice(start, length));
     }
 
     private static string EnsureHandshakeRunlogsDirectory(WorldProxyOptions options)
