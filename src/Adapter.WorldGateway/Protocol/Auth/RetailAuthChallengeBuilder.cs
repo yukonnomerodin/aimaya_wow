@@ -17,28 +17,35 @@ internal static class RetailAuthChallengeBuilder
         consumedBytes = 0;
         proof = default;
 
-        if (buffer.Length < 44)
+        if (buffer.Length < WorldGatewayProtocolConstants.AcoreAuthChallengeFrameBytes)
         {
             return false;
         }
 
-        Span<byte> acFrame = stackalloc byte[44];
-        buffer.Slice(0, 44).CopyTo(acFrame);
+        Span<byte> acFrame = stackalloc byte[WorldGatewayProtocolConstants.AcoreAuthChallengeFrameBytes];
+        buffer.Slice(0, WorldGatewayProtocolConstants.AcoreAuthChallengeFrameBytes).CopyTo(acFrame);
 
-        ushort sizeBE = BinaryPrimitives.ReadUInt16BigEndian(acFrame[..2]);
-        ushort opcodeLE = BinaryPrimitives.ReadUInt16LittleEndian(acFrame.Slice(2, 2));
-        if (sizeBE != 42 || opcodeLE != WorldGatewayOpcodes.AcoreSmsgAuthChallenge)
+        ushort sizeBE = BinaryPrimitives.ReadUInt16BigEndian(acFrame[..sizeof(ushort)]);
+        ushort opcodeLE = BinaryPrimitives.ReadUInt16LittleEndian(acFrame.Slice(sizeof(ushort), sizeof(ushort)));
+        if (sizeBE != WorldGatewayProtocolConstants.AcoreAuthChallengePacketSizeFieldValue ||
+            opcodeLE != WorldGatewayOpcodes.AcoreSmsgAuthChallenge)
         {
             return false;
         }
 
-        Span<byte> acPayload = acFrame.Slice(4, 40);
-        Span<byte> retailPayload = stackalloc byte[65];
-        uint dosChallenge = BinaryPrimitives.ReadUInt32LittleEndian(acPayload[..4]);
-        uint authSeed = BinaryPrimitives.ReadUInt32LittleEndian(acPayload.Slice(4, 4));
-        ReadOnlySpan<byte> acChallengeSeed = acPayload.Slice(8, 32);
-        Span<byte> dosBlock = retailPayload.Slice(0, 32);
-        Span<byte> challengeBlock = retailPayload.Slice(32, 32);
+        Span<byte> acPayload = acFrame.Slice(
+            WorldGatewayProtocolConstants.AcoreAuthChallengePayloadOffsetBytes,
+            WorldGatewayProtocolConstants.AcoreAuthChallengePayloadBytes);
+        Span<byte> retailPayload = stackalloc byte[WorldGatewayProtocolConstants.RetailAuthChallengePayloadBytes];
+        uint dosChallenge = BinaryPrimitives.ReadUInt32LittleEndian(acPayload[..sizeof(uint)]);
+        uint authSeed = BinaryPrimitives.ReadUInt32LittleEndian(acPayload.Slice(sizeof(uint), sizeof(uint)));
+        ReadOnlySpan<byte> acChallengeSeed = acPayload.Slice(
+            sizeof(uint) * 2,
+            WorldGatewayProtocolConstants.AcoreAuthChallengeNewSeedBytes);
+        Span<byte> dosBlock = retailPayload.Slice(0, WorldGatewayProtocolConstants.RetailAuthChallengeDosBlockBytes);
+        Span<byte> challengeBlock = retailPayload.Slice(
+            WorldGatewayProtocolConstants.RetailAuthChallengePayloadChallengeBlockOffsetBytes,
+            WorldGatewayProtocolConstants.RetailAuthChallengeChallengeBlockBytes);
         string dosBlockSource;
 
         // Retail/TC auth challenge layout:
@@ -57,15 +64,29 @@ internal static class RetailAuthChallengeBuilder
 
         // Keep challenge block bound to AC new seed so downstream auth bridge remains stable.
         acChallengeSeed.CopyTo(challengeBlock);
-        retailPayload[64] = 1;
+        retailPayload[WorldGatewayProtocolConstants.RetailAuthChallengePayloadTrailingFlagOffsetBytes] = 1;
 
-        retailFrame = GC.AllocateUninitializedArray<byte>(16 + 4 + 65);
+        retailFrame = GC.AllocateUninitializedArray<byte>(
+            WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes +
+            WorldGatewayProtocolConstants.RetailAuthChallengeBodyBytes);
         Span<byte> frame = retailFrame;
 
-        BinaryPrimitives.WriteUInt32LittleEndian(frame[..4], 69); // opcode (4) + payload (65)
-        frame.Slice(4, 12).Clear(); // tag=0 before encrypted mode
-        BinaryPrimitives.WriteUInt32LittleEndian(frame.Slice(16, 4), WorldGatewayOpcodes.RetailSmsgAuthChallenge);
-        retailPayload.CopyTo(frame.Slice(20, 65));
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            frame[..WorldGatewayProtocolConstants.RetailWorldOpcodeBytes],
+            (uint)WorldGatewayProtocolConstants.RetailAuthChallengeBodyBytes); // opcode + payload
+        frame.Slice(
+                WorldGatewayProtocolConstants.RetailWorldOpcodeBytes,
+                WorldGatewayProtocolConstants.RetailWorldFrameTagBytes)
+            .Clear(); // tag=0 before encrypted mode
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            frame.Slice(
+                WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes,
+                WorldGatewayProtocolConstants.RetailWorldOpcodeBytes),
+            WorldGatewayOpcodes.RetailSmsgAuthChallenge);
+        retailPayload.CopyTo(
+            frame.Slice(
+                WorldGatewayProtocolConstants.RetailWorldPayloadOffsetBytes,
+                WorldGatewayProtocolConstants.RetailAuthChallengePayloadBytes));
 
         proof = new RetailAuthChallengeProof(
             TimestampUtc: DateTimeOffset.UtcNow.ToString("O"),
@@ -79,7 +100,7 @@ internal static class RetailAuthChallengeBuilder
             RetailPayloadHex: Convert.ToHexString(retailPayload),
             RetailPayloadBytes: retailPayload.Length);
 
-        consumedBytes = 44;
+        consumedBytes = WorldGatewayProtocolConstants.AcoreAuthChallengeFrameBytes;
         return true;
     }
 }

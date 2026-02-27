@@ -4,8 +4,6 @@ namespace Adapter.WorldGateway;
 
 internal static class RetailGlueRequestParsers
 {
-    private const int MaxDbQueryBulkRecords = 4096;
-
     public static bool TryParseDbQueryBulk(
         ReadOnlySpan<byte> payload,
         out ParsedDbQueryBulk query,
@@ -14,22 +12,27 @@ internal static class RetailGlueRequestParsers
         query = default;
         error = null;
 
-        if (payload.Length < 6)
+        if (payload.Length < WorldGatewayProtocolConstants.RetailGlueDbQueryBulkMinPayloadBytes)
         {
             error = $"DB_QUERY_BULK payload too short: {payload.Length}.";
             return false;
         }
 
-        uint tableHash = BinaryPrimitives.ReadUInt32LittleEndian(payload[..4]);
-        ReadOnlySpan<byte> packed = payload[4..];
+        uint tableHash = BinaryPrimitives.ReadUInt32LittleEndian(
+            payload[..WorldGatewayProtocolConstants.RetailGlueDbQueryBulkTableHashBytes]);
+        ReadOnlySpan<byte> packed = payload[WorldGatewayProtocolConstants.RetailGlueDbQueryBulkTableHashBytes..];
         int bitOffset = 0;
-        if (!TryReadBitsMsbFirst(packed, ref bitOffset, 13, out ulong queryCountRaw))
+        if (!TryReadBitsMsbFirst(
+                packed,
+                ref bitOffset,
+                WorldGatewayProtocolConstants.RetailGlueDbQueryBulkQueryCountBits,
+                out ulong queryCountRaw))
         {
             error = "Failed to read DB_QUERY_BULK query count.";
             return false;
         }
 
-        if (queryCountRaw > MaxDbQueryBulkRecords)
+        if (queryCountRaw > WorldGatewayProtocolConstants.RetailGlueDbQueryBulkMaxRecords)
         {
             error = $"DB_QUERY_BULK query count is out of range: {queryCountRaw}.";
             return false;
@@ -63,17 +66,29 @@ internal static class RetailGlueRequestParsers
         request = default;
         error = null;
 
-        if (payload.Length < 24)
+        if (payload.Length < WorldGatewayProtocolConstants.RetailGlueBattlenetRequestMinPayloadBytes)
         {
             error = $"CMSG_BATTLENET_REQUEST payload too short: {payload.Length}.";
             return false;
         }
 
-        ulong methodType = BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]);
-        ulong objectId = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(8, 8));
-        uint token = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(16, 4));
-        uint protoSize = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(20, 4));
-        if (payload.Length < 24 + protoSize)
+        ulong methodType = BinaryPrimitives.ReadUInt64LittleEndian(
+            payload.Slice(
+                WorldGatewayProtocolConstants.RetailGlueBattlenetRequestMethodTypeOffsetBytes,
+                WorldGatewayProtocolConstants.RetailGlueBattlenetRequestMethodTypeBytes));
+        ulong objectId = BinaryPrimitives.ReadUInt64LittleEndian(
+            payload.Slice(
+                WorldGatewayProtocolConstants.RetailGlueBattlenetRequestObjectIdOffsetBytes,
+                WorldGatewayProtocolConstants.RetailGlueBattlenetRequestObjectIdBytes));
+        uint token = BinaryPrimitives.ReadUInt32LittleEndian(
+            payload.Slice(
+                WorldGatewayProtocolConstants.RetailGlueBattlenetRequestTokenOffsetBytes,
+                WorldGatewayProtocolConstants.RetailGlueBattlenetRequestTokenBytes));
+        uint protoSize = BinaryPrimitives.ReadUInt32LittleEndian(
+            payload.Slice(
+                WorldGatewayProtocolConstants.RetailGlueBattlenetRequestProtoSizeOffsetBytes,
+                WorldGatewayProtocolConstants.RetailGlueBattlenetRequestProtoSizeBytes));
+        if (payload.Length < WorldGatewayProtocolConstants.RetailGlueBattlenetRequestMinPayloadBytes + protoSize)
         {
             error = $"CMSG_BATTLENET_REQUEST payload truncated. ProtoSize={protoSize}, PayloadBytes={payload.Length}.";
             return false;

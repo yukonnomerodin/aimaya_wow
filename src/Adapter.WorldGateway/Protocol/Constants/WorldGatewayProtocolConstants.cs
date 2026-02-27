@@ -18,6 +18,22 @@ internal static class WorldGatewayProtocolConstants
     internal const int RetailAuthSessionLocalChallenge4Bytes = 4;
     internal const int RetailAuthFixedPayloadBytes =
         RetailAuthSessionLocalChallengeOffsetBytes + RetailAuthSessionLocalChallenge32Bytes + RetailAuthDigestBytes;
+    internal const ushort AcoreAuthChallengePacketSizeFieldValue = 42;
+    internal const int AcoreAuthChallengeFrameBytes = 44;
+    internal const int AcoreAuthChallengePayloadOffsetBytes = 4;
+    internal const int AcoreAuthChallengePayloadBytes = 40;
+    internal const int AcoreAuthChallengeDosChallengeOffsetBytes = AcoreAuthChallengePayloadOffsetBytes + 0;
+    internal const int AcoreAuthChallengeAuthSeedOffsetBytes = AcoreAuthChallengePayloadOffsetBytes + 4;
+    internal const int AcoreAuthChallengeNewSeedOffsetBytes = AcoreAuthChallengePayloadOffsetBytes + 8;
+    internal const int AcoreAuthChallengeNewSeedBytes = 32;
+    internal const int RetailAuthChallengeDosBlockBytes = 32;
+    internal const int RetailAuthChallengeChallengeBlockBytes = 32;
+    internal const int RetailAuthChallengeTrailingFlagBytes = 1;
+    internal const int RetailAuthChallengePayloadBytes =
+        RetailAuthChallengeDosBlockBytes + RetailAuthChallengeChallengeBlockBytes + RetailAuthChallengeTrailingFlagBytes;
+    internal const int RetailAuthChallengeBodyBytes = RetailWorldOpcodeBytes + RetailAuthChallengePayloadBytes;
+    internal const int RetailAuthChallengePayloadChallengeBlockOffsetBytes = RetailAuthChallengeDosBlockBytes;
+    internal const int RetailAuthChallengePayloadTrailingFlagOffsetBytes = RetailAuthChallengePayloadBytes - 1;
     internal const int RetailAccountDataTimesCount = 20;
     internal const int RetailTutorialValuesCount = 8;
     internal const int TrinityCompressionThresholdBytes = 0x400;
@@ -55,6 +71,19 @@ internal static class WorldGatewayProtocolConstants
     internal const int AuthResponseReplayTimeFieldOffset = AuthResponseReplaySuccessInfoOffset + 30;
     internal const int AuthResponseReplayGameTimeFixedBytes = 12;
     internal const int AuthResponseReplayGameTimeFlagsBytes = 1;
+    internal const int RetailGlueDbQueryBulkMinPayloadBytes = 6;
+    internal const int RetailGlueDbQueryBulkTableHashBytes = 4;
+    internal const int RetailGlueDbQueryBulkQueryCountBits = 13;
+    internal const int RetailGlueDbQueryBulkMaxRecords = 4096;
+    internal const int RetailGlueBattlenetRequestMinPayloadBytes = 24;
+    internal const int RetailGlueBattlenetRequestMethodTypeOffsetBytes = 0;
+    internal const int RetailGlueBattlenetRequestMethodTypeBytes = 8;
+    internal const int RetailGlueBattlenetRequestObjectIdOffsetBytes = 8;
+    internal const int RetailGlueBattlenetRequestObjectIdBytes = 8;
+    internal const int RetailGlueBattlenetRequestTokenOffsetBytes = 16;
+    internal const int RetailGlueBattlenetRequestTokenBytes = 4;
+    internal const int RetailGlueBattlenetRequestProtoSizeOffsetBytes = 20;
+    internal const int RetailGlueBattlenetRequestProtoSizeBytes = 4;
 
     internal static uint BuildRetailVirtualRealmAddress(uint acoreRealmId)
     {

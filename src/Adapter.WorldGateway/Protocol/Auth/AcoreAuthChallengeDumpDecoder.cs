@@ -9,18 +9,23 @@ internal static class AcoreAuthChallengeDumpDecoder
     {
         dump = default;
         // AC world challenge packet: 2-byte size + 2-byte opcode + 40-byte payload.
-        if (buffer.Length < 44)
+        if (buffer.Length < WorldGatewayProtocolConstants.AcoreAuthChallengeFrameBytes)
         {
             return false;
         }
 
-        Span<byte> frame = stackalloc byte[44];
-        buffer.Slice(0, 44).CopyTo(frame);
+        Span<byte> frame = stackalloc byte[WorldGatewayProtocolConstants.AcoreAuthChallengeFrameBytes];
+        buffer.Slice(0, WorldGatewayProtocolConstants.AcoreAuthChallengeFrameBytes).CopyTo(frame);
 
-        uint dosChallenge = BinaryPrimitives.ReadUInt32LittleEndian(frame.Slice(4, 4));
-        uint authSeed = BinaryPrimitives.ReadUInt32LittleEndian(frame.Slice(8, 4));
-        byte[] newSeed = GC.AllocateUninitializedArray<byte>(32);
-        frame.Slice(12, 32).CopyTo(newSeed);
+        uint dosChallenge = BinaryPrimitives.ReadUInt32LittleEndian(
+            frame.Slice(WorldGatewayProtocolConstants.AcoreAuthChallengeDosChallengeOffsetBytes, sizeof(uint)));
+        uint authSeed = BinaryPrimitives.ReadUInt32LittleEndian(
+            frame.Slice(WorldGatewayProtocolConstants.AcoreAuthChallengeAuthSeedOffsetBytes, sizeof(uint)));
+        byte[] newSeed = GC.AllocateUninitializedArray<byte>(WorldGatewayProtocolConstants.AcoreAuthChallengeNewSeedBytes);
+        frame.Slice(
+                WorldGatewayProtocolConstants.AcoreAuthChallengeNewSeedOffsetBytes,
+                WorldGatewayProtocolConstants.AcoreAuthChallengeNewSeedBytes)
+            .CopyTo(newSeed);
         string newSeedHex = Convert.ToHexString(newSeed);
 
         dump = new AcoreAuthChallengeDump(dosChallenge, authSeed, newSeedHex, newSeed);
