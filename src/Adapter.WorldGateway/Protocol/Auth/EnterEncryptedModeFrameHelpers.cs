@@ -54,7 +54,7 @@ internal static class EnterEncryptedModeFrameHelpers
         }
 
         Buffer.BlockCopy(runtimeSignature, 0, payload, signatureOffset, runtimeSignature.Length);
-        Buffer.BlockCopy(payload, 0, retailFrame, 20, payload.Length);
+        Buffer.BlockCopy(payload, 0, retailFrame, WorldGatewayProtocolConstants.RetailWorldPayloadOffsetBytes, payload.Length);
         return true;
     }
 
@@ -63,28 +63,28 @@ internal static class EnterEncryptedModeFrameHelpers
         payload = Array.Empty<byte>();
         error = null;
 
-        if (retailFrame.Length < 20)
+        if (retailFrame.Length < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes)
         {
             error = $"Retail frame is too short: {retailFrame.Length}.";
             return false;
         }
 
-        uint size = BinaryPrimitives.ReadUInt32LittleEndian(retailFrame.AsSpan(0, 4));
-        if (size < 4)
+        uint size = BinaryPrimitives.ReadUInt32LittleEndian(retailFrame.AsSpan(0, WorldGatewayProtocolConstants.RetailWorldOpcodeBytes));
+        if (size < WorldGatewayProtocolConstants.RetailWorldOpcodeBytes)
         {
             error = $"Retail frame size is invalid: {size}.";
             return false;
         }
 
-        int expectedFrameBytes = checked((int)size + 16);
+        int expectedFrameBytes = checked((int)size + WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes);
         if (retailFrame.Length != expectedFrameBytes)
         {
             error = $"Retail frame length mismatch. Actual={retailFrame.Length}, Expected={expectedFrameBytes}.";
             return false;
         }
 
-        int payloadBytes = checked((int)size - 4);
-        payload = retailFrame.AsSpan(20, payloadBytes).ToArray();
+        int payloadBytes = checked((int)size - WorldGatewayProtocolConstants.RetailWorldOpcodeBytes);
+        payload = retailFrame.AsSpan(WorldGatewayProtocolConstants.RetailWorldPayloadOffsetBytes, payloadBytes).ToArray();
         return true;
     }
 }

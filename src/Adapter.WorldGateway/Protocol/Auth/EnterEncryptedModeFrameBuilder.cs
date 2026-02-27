@@ -6,8 +6,6 @@ namespace Adapter.WorldGateway;
 
 internal static class EnterEncryptedModeFrameBuilder
 {
-    private const int AcoreSessionKeyBytes = 40;
-
     private static readonly byte[] TrinityEncryptionKeySeed =
     [
         0x71, 0xC9, 0xED, 0x5A, 0xA7, 0x0E, 0x4D, 0xFF, 0x4C, 0x36, 0xA6, 0x5A, 0x3E, 0x46, 0x8A, 0x4A,
@@ -67,9 +65,10 @@ internal static class EnterEncryptedModeFrameBuilder
         retailWorldEncryptKey32 = Array.Empty<byte>();
         proof = default;
 
-        if (sessionKey40.Length != AcoreSessionKeyBytes)
+        if (sessionKey40.Length != WorldGatewayProtocolConstants.AcoreSessionKeyBytes)
         {
-            error = $"Invalid session key length {sessionKey40.Length}. Expected {AcoreSessionKeyBytes}.";
+            error =
+                $"Invalid session key length {sessionKey40.Length}. Expected {WorldGatewayProtocolConstants.AcoreSessionKeyBytes}.";
             return false;
         }
 

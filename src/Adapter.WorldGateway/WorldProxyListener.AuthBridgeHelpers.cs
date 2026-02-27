@@ -157,7 +157,7 @@ public sealed partial class WorldProxyListener
             DbParityGateResult dbGateResult = DbParityGateEvaluator.Evaluate(
                 effectiveRetailFrame,
                 account,
-                AcoreSessionKeyBytes,
+                WorldGatewayProtocolConstants.AcoreSessionKeyBytes,
                 _options.AcoreRealmId,
                 _options.AcoreClientBuild);
             bridgeState.MarkTemporalInvariant(
@@ -181,7 +181,7 @@ public sealed partial class WorldProxyListener
                 authSeed,
                 account.SessionKey,
                 Sha1ZeroPrefix,
-                AcoreDigestBytes);
+                WorldGatewayProtocolConstants.AcoreAuthDigestBytes);
 
             byte[] addonInfo = AcoreAuthSessionBuilder.BuildMinimalAddonInfoBlob();
             byte[] payload = AcoreAuthSessionBuilder.BuildAcoreAuthSessionPayload(

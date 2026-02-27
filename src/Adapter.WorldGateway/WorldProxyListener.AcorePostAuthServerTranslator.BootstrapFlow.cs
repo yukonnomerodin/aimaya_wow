@@ -50,7 +50,7 @@ public sealed partial class WorldProxyListener
                         case WorldGatewayOpcodes.AcoreSmsgTutorialFlags
                             when _forwardAcoreTutorialFlagsAsRetailTutorialFlags &&
                                  tutorialFlagsPayload is null &&
-                                 buffered.Payload.Length == RetailTutorialValuesCount * sizeof(uint):
+                                 buffered.Payload.Length == WorldGatewayProtocolConstants.RetailTutorialValuesCount * sizeof(uint):
                             tutorialFlagsPayload = buffered.Payload;
                             break;
                         default:
@@ -97,7 +97,9 @@ public sealed partial class WorldProxyListener
 
                 byte[] accountDataTimes = _probeAccountDataTimesPayload.Length > 0
                     ? RetailEnvelopeBuilder.BuildRetailWorldFrame(WorldGatewayOpcodes.RetailSmsgAccountDataTimes, _probeAccountDataTimesPayload)
-                    : RetailGluePayloadBuilders.BuildAccountDataTimesFrame(WorldGatewayOpcodes.RetailSmsgAccountDataTimes, RetailAccountDataTimesCount);
+                    : RetailGluePayloadBuilders.BuildAccountDataTimesFrame(
+                        WorldGatewayOpcodes.RetailSmsgAccountDataTimes,
+                        WorldGatewayProtocolConstants.RetailAccountDataTimesCount);
                 bootstrapBuffer.Write(accountDataTimes);
                 stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgAccountDataTimes:X8}");
 
@@ -106,7 +108,7 @@ public sealed partial class WorldProxyListener
                     : RetailGluePayloadBuilders.BuildTutorialFlagsFrame(
                         WorldGatewayOpcodes.RetailSmsgTutorialFlags,
                         tutorialFlagsPayload,
-                        RetailTutorialValuesCount * sizeof(uint));
+                        WorldGatewayProtocolConstants.RetailTutorialValuesCount * sizeof(uint));
                 bootstrapBuffer.Write(tutorialFlags);
                 stagedOpcodes.Add($"0x{WorldGatewayOpcodes.RetailSmsgTutorialFlags:X8}");
 

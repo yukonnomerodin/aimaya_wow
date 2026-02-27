@@ -22,41 +22,44 @@ internal static class RetailCompressedPacketWrapper
         compressedFrame = Array.Empty<byte>();
         error = null;
 
-        if (plainFrame.Length < 20)
+        if (plainFrame.Length < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes)
         {
             error = $"Retail frame too short for compression wrapper: {plainFrame.Length} bytes.";
             return false;
         }
 
-        uint bodyLength = BinaryPrimitives.ReadUInt32LittleEndian(plainFrame.Slice(0, 4));
-        if (bodyLength < 4)
+        uint bodyLength = BinaryPrimitives.ReadUInt32LittleEndian(plainFrame.Slice(0, WorldGatewayProtocolConstants.RetailWorldOpcodeBytes));
+        if (bodyLength < WorldGatewayProtocolConstants.RetailWorldOpcodeBytes)
         {
             error = $"Retail frame has invalid body length for compression wrapper: {bodyLength}.";
             return false;
         }
 
-        int expectedFrameBytes = checked((int)bodyLength + 16);
+        int expectedFrameBytes = checked((int)bodyLength + WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes);
         if (plainFrame.Length != expectedFrameBytes)
         {
             error = $"Retail frame size mismatch for compression wrapper: expected {expectedFrameBytes}, got {plainFrame.Length}.";
             return false;
         }
 
-        uint opcode = BinaryPrimitives.ReadUInt32LittleEndian(plainFrame.Slice(16, 4));
+        uint opcode = BinaryPrimitives.ReadUInt32LittleEndian(
+            plainFrame.Slice(
+                WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes,
+                WorldGatewayProtocolConstants.RetailWorldOpcodeBytes));
         if (opcode == compressedPacketOpcode)
         {
             compressedFrame = plainFrame.ToArray();
             return true;
         }
 
-        int payloadBytes = checked((int)bodyLength - 4);
+        int payloadBytes = checked((int)bodyLength - WorldGatewayProtocolConstants.RetailWorldOpcodeBytes);
         if (!forceCompressionEnvelope && payloadBytes <= compressionThresholdBytes)
         {
             compressedFrame = plainFrame.ToArray();
             return true;
         }
 
-        ReadOnlySpan<byte> uncompressed = plainFrame.Slice(16, checked((int)bodyLength));
+        ReadOnlySpan<byte> uncompressed = plainFrame.Slice(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes, checked((int)bodyLength));
         if (!RetailCompressionCodec.TryCompress(
                 uncompressed,
                 useRawDeflate,
@@ -70,11 +73,12 @@ internal static class RetailCompressedPacketWrapper
             return false;
         }
 
-        byte[] payload = GC.AllocateUninitializedArray<byte>(12 + compressedPayload.Length);
+        const int CompressedPacketMetadataBytes = 12;
+        byte[] payload = GC.AllocateUninitializedArray<byte>(CompressedPacketMetadataBytes + compressedPayload.Length);
         Span<byte> payloadSpan = payload;
         BinaryPrimitives.WriteUInt32LittleEndian(payloadSpan.Slice(0, 4), (uint)uncompressed.Length);
         ReadOnlySpan<byte> uncompressedChecksumSpan = checksumPayloadOnly && uncompressed.Length > 4
-            ? uncompressed.Slice(4)
+            ? uncompressed.Slice(WorldGatewayProtocolConstants.RetailWorldOpcodeBytes)
             : uncompressed;
         uint uncompressedChecksum = RetailCompressionCodec.ComputeAdler32(checksumSeed, uncompressedChecksumSpan);
         BinaryPrimitives.WriteUInt32LittleEndian(payloadSpan.Slice(4, 4), uncompressedChecksum);
@@ -95,7 +99,7 @@ internal static class RetailCompressedPacketWrapper
         }
 
         BinaryPrimitives.WriteUInt32LittleEndian(payloadSpan.Slice(8, 4), compressedChecksum);
-        compressedPayload.CopyTo(payloadSpan.Slice(12));
+        compressedPayload.CopyTo(payloadSpan.Slice(CompressedPacketMetadataBytes));
 
         compressedFrame = RetailEnvelopeBuilder.BuildRetailWorldFrame(compressedPacketOpcode, payloadSpan);
         return true;

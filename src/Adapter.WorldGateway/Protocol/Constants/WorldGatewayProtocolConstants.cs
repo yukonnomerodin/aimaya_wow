@@ -6,6 +6,21 @@ namespace Adapter.WorldGateway;
 internal static class WorldGatewayProtocolConstants
 {
     internal const uint TrinityCompressionAdlerSeed = 0x9827D8F1;
+    internal const int AcoreSessionKeyBytes = 40;
+    internal const int AcoreAuthDigestBytes = 20;
+    internal const int RetailAuthDigestBytes = 24;
+    internal const int RetailAuthSessionDosResponseBytes = 8;
+    internal const int RetailAuthSessionRegionIdOffsetBytes = 8;
+    internal const int RetailAuthSessionBattlegroupIdOffsetBytes = 12;
+    internal const int RetailAuthSessionRealmIdOffsetBytes = 16;
+    internal const int RetailAuthSessionLocalChallengeOffsetBytes = 20;
+    internal const int RetailAuthSessionLocalChallenge32Bytes = 32;
+    internal const int RetailAuthSessionLocalChallenge4Bytes = 4;
+    internal const int RetailAuthFixedPayloadBytes =
+        RetailAuthSessionLocalChallengeOffsetBytes + RetailAuthSessionLocalChallenge32Bytes + RetailAuthDigestBytes;
+    internal const int RetailAccountDataTimesCount = 20;
+    internal const int RetailTutorialValuesCount = 8;
+    internal const int TrinityCompressionThresholdBytes = 0x400;
     internal const int RetailWorldFrameOuterHeaderBytes = 16;
     internal const int RetailWorldOpcodeBytes = 4;
     internal const int RetailWorldPayloadOffsetBytes = RetailWorldFrameOuterHeaderBytes + RetailWorldOpcodeBytes;

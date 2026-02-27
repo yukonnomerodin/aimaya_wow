@@ -742,7 +742,7 @@ public sealed partial class WorldProxyListener
                     RetailAuthSessionParser.TryParseRetailAuthSessionFrame(
                         buffer,
                         WorldGatewayOpcodes.RetailCmsgAuthSession,
-                        RetailAuthFixedPayloadBytes,
+                        WorldGatewayProtocolConstants.RetailAuthFixedPayloadBytes,
                         out RetailAuthSessionFrame retailAuthFrame))
                 {
                     if (_options.ProbeRetailAuthSessionCountAsPreAckClientFrame)

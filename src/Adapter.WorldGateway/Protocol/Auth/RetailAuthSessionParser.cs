@@ -13,33 +13,36 @@ internal static class RetailAuthSessionParser
     {
         frame = default;
 
-        if (buffer.Length < 20)
+        if (buffer.Length < WorldGatewayProtocolConstants.RetailWorldFrameMinBytes)
         {
             return false;
         }
 
-        Span<byte> header20 = stackalloc byte[20];
-        buffer.Slice(0, 20).CopyTo(header20);
+        Span<byte> header = stackalloc byte[WorldGatewayProtocolConstants.RetailWorldPayloadOffsetBytes];
+        buffer.Slice(0, WorldGatewayProtocolConstants.RetailWorldPayloadOffsetBytes).CopyTo(header);
 
-        uint packetSize = BinaryPrimitives.ReadUInt32LittleEndian(header20[..4]);
-        if (packetSize < 4)
+        uint packetSize = BinaryPrimitives.ReadUInt32LittleEndian(header[..WorldGatewayProtocolConstants.RetailWorldOpcodeBytes]);
+        if (packetSize < WorldGatewayProtocolConstants.RetailWorldOpcodeBytes)
         {
             return false;
         }
 
-        int fullFrameBytes = checked(16 + (int)packetSize);
+        int fullFrameBytes = checked(WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes + (int)packetSize);
         if (buffer.Length < fullFrameBytes)
         {
             return false;
         }
 
-        uint opcode = BinaryPrimitives.ReadUInt32LittleEndian(header20.Slice(16, 4));
+        uint opcode = BinaryPrimitives.ReadUInt32LittleEndian(
+            header.Slice(
+                WorldGatewayProtocolConstants.RetailWorldFrameOuterHeaderBytes,
+                WorldGatewayProtocolConstants.RetailWorldOpcodeBytes));
         if (opcode != authSessionOpcode)
         {
             return false;
         }
 
-        int payloadBytes = (int)packetSize - 4;
+        int payloadBytes = (int)packetSize - WorldGatewayProtocolConstants.RetailWorldOpcodeBytes;
         if (payloadBytes < retailAuthFixedPayloadBytes)
         {
             return false;
@@ -49,17 +52,22 @@ internal static class RetailAuthSessionParser
         try
         {
             Span<byte> payload = rented.AsSpan(0, payloadBytes);
-            buffer.Slice(20, payloadBytes).CopyTo(payload);
+            buffer.Slice(WorldGatewayProtocolConstants.RetailWorldPayloadOffsetBytes, payloadBytes).CopyTo(payload);
 
-            ulong dosResponse = BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]);
-            uint regionId = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(8, 4));
-            uint battlegroupId = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(12, 4));
-            uint realmId = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(16, 4));
+            ulong dosResponse = BinaryPrimitives.ReadUInt64LittleEndian(payload[..WorldGatewayProtocolConstants.RetailAuthSessionDosResponseBytes]);
+            uint regionId = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(WorldGatewayProtocolConstants.RetailAuthSessionRegionIdOffsetBytes, sizeof(uint)));
+            uint battlegroupId = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(WorldGatewayProtocolConstants.RetailAuthSessionBattlegroupIdOffsetBytes, sizeof(uint)));
+            uint realmId = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(WorldGatewayProtocolConstants.RetailAuthSessionRealmIdOffsetBytes, sizeof(uint)));
 
-            byte[] localChallenge32 = GC.AllocateUninitializedArray<byte>(32);
-            payload.Slice(20, 32).CopyTo(localChallenge32);
-            byte[] localChallenge4 = GC.AllocateUninitializedArray<byte>(4);
-            localChallenge32.AsSpan(0, 4).CopyTo(localChallenge4);
+            byte[] localChallenge32 = GC.AllocateUninitializedArray<byte>(WorldGatewayProtocolConstants.RetailAuthSessionLocalChallenge32Bytes);
+            payload.Slice(
+                    WorldGatewayProtocolConstants.RetailAuthSessionLocalChallengeOffsetBytes,
+                    WorldGatewayProtocolConstants.RetailAuthSessionLocalChallenge32Bytes)
+                .CopyTo(localChallenge32);
+            byte[] localChallenge4 = GC.AllocateUninitializedArray<byte>(WorldGatewayProtocolConstants.RetailAuthSessionLocalChallenge4Bytes);
+            localChallenge32
+                .AsSpan(0, WorldGatewayProtocolConstants.RetailAuthSessionLocalChallenge4Bytes)
+                .CopyTo(localChallenge4);
 
             int accountId = 0;
             _ = TryExtractAccountIdFromRetailPayload(payload, out accountId);

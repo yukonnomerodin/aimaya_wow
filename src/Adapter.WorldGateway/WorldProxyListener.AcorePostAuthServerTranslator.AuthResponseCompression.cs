@@ -29,7 +29,7 @@ public sealed partial class WorldProxyListener
                     _probeCompressedAuthResponseCompressedChecksumIncludeMetadata,
                     _statefulCompressedAuthResponseCompressor,
                     WorldGatewayOpcodes.RetailSmsgCompressedPacket,
-                    TrinityCompressionThresholdBytes,
+                    WorldGatewayProtocolConstants.TrinityCompressionThresholdBytes,
                     out byte[] compressedAuthResponse,
                     out string? compressionError))
             {

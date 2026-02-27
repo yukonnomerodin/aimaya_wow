@@ -25,16 +25,9 @@ namespace Adapter.WorldGateway;
 public sealed partial class WorldProxyListener : BackgroundService
 {
     private const int DefaultDumpBytes = 64;
-    private const int AcoreSessionKeyBytes = 40;
-    private const int AcoreDigestBytes = 20;
-    private const int RetailDigestBytes = 24;
-    private const int RetailAuthFixedPayloadBytes = 8 + 4 + 4 + 4 + 32 + RetailDigestBytes;
-    private const int RetailAccountDataTimesCount = 20;
-    private const int RetailTutorialValuesCount = 8;
     private static readonly byte[] Sha1ZeroPrefix = [0, 0, 0, 0];
     private static readonly byte[] ServerConnectionInitializer = Encoding.ASCII.GetBytes("WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT - V2\n");
     private static readonly byte[] ClientConnectionInitializer = Encoding.ASCII.GetBytes("WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER - V2\n");
-    private const int TrinityCompressionThresholdBytes = 0x400;
     private readonly ILogger<WorldProxyListener> _logger;
     private readonly WorldProxyOptions _options;
     private readonly ProtocolEngineeringOptions _protocolOptions;
@@ -133,7 +126,7 @@ public sealed partial class WorldProxyListener : BackgroundService
         _worldSessionMaterialRepository = new WorldSessionMaterialRepository(
             _logger,
             _options.AuthDbConnectionString,
-            AcoreSessionKeyBytes,
+            WorldGatewayProtocolConstants.AcoreSessionKeyBytes,
             maxReadAttempts: 3,
             retryBaseDelayMs: 150,
             selectCommandTimeoutSeconds: 5);
@@ -850,7 +843,7 @@ public sealed partial class WorldProxyListener : BackgroundService
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: first post-ACK SMSG_AUTH_RESPONSE is wrapped as SMSG_COMPRESSED_PACKET when payload exceeds Trinity threshold (>0x{Threshold:X}).",
-                TrinityCompressionThresholdBytes);
+                WorldGatewayProtocolConstants.TrinityCompressionThresholdBytes);
 
             if (_options.ProbeCompressedAuthResponseForceEnvelope)
             {
