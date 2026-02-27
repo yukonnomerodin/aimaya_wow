@@ -27,7 +27,7 @@ internal static class RetailAuthChallengeBuilder
 
         ushort sizeBE = BinaryPrimitives.ReadUInt16BigEndian(acFrame[..2]);
         ushort opcodeLE = BinaryPrimitives.ReadUInt16LittleEndian(acFrame.Slice(2, 2));
-        if (sizeBE != 42 || opcodeLE != 0x01EC)
+        if (sizeBE != 42 || opcodeLE != WorldGatewayOpcodes.AcoreSmsgAuthChallenge)
         {
             return false;
         }
@@ -64,12 +64,12 @@ internal static class RetailAuthChallengeBuilder
 
         BinaryPrimitives.WriteUInt32LittleEndian(frame[..4], 69); // opcode (4) + payload (65)
         frame.Slice(4, 12).Clear(); // tag=0 before encrypted mode
-        BinaryPrimitives.WriteUInt32LittleEndian(frame.Slice(16, 4), 0x490000); // SMSG_AUTH_CHALLENGE (Retail/TC)
+        BinaryPrimitives.WriteUInt32LittleEndian(frame.Slice(16, 4), WorldGatewayOpcodes.RetailSmsgAuthChallenge);
         retailPayload.CopyTo(frame.Slice(20, 65));
 
         proof = new RetailAuthChallengeProof(
             TimestampUtc: DateTimeOffset.UtcNow.ToString("O"),
-            RetailOpcode: 0x0049_0000,
+            RetailOpcode: WorldGatewayOpcodes.RetailSmsgAuthChallenge,
             AcoreDosChallenge: dosChallenge,
             AcoreAuthSeed: authSeed,
             AcoreNewSeedHex: Convert.ToHexString(acChallengeSeed),

@@ -30,7 +30,7 @@ internal sealed record HandshakeLabReport
     public bool IncludeRegionGroup { get; init; } = true;
     public bool EnterEncryptedEnabled { get; init; }
     public bool EnterEncryptedEnabledAsByte { get; init; }
-    public string EnterEncryptedOpcode { get; init; } = "0x00490004";
+    public string EnterEncryptedOpcode { get; init; } = $"0x{WorldGatewayOpcodes.RetailSmsgEnterEncryptedModeDefault:X8}";
     public bool EnterEncryptedPreferBnetKeyData { get; init; } = true;
     public int AckTimeoutMs { get; init; }
     public string AwaitingRetailOpcodes { get; init; } = "<none>";

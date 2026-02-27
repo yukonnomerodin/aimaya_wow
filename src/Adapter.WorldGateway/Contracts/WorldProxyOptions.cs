@@ -163,7 +163,7 @@ public sealed class WorldProxyOptions
 
     public bool EnterEncryptedModeEnabledAsByte { get; init; } = false;
 
-    public string EnterEncryptedModeOpcode { get; init; } = "0x00490004";
+    public string EnterEncryptedModeOpcode { get; init; } = $"0x{WorldGatewayOpcodes.RetailSmsgEnterEncryptedModeDefault:X8}";
 
     public bool EnterEncryptedModePreferBnetKeyData { get; init; } = true;
 

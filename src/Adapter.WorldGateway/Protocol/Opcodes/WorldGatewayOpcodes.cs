@@ -32,6 +32,7 @@ internal static class WorldGatewayOpcodes
     internal const uint RetailSmsgAuthResponse = 0x0042_0001;
     internal const uint RetailSmsgAuthResponseSweepStart = 0x0042_0000;
     internal const int RetailSmsgAuthResponseSweepCount = 0x0101;
+    internal const uint RetailSmsgAuthChallenge = 0x0049_0000;
     internal const uint RetailSmsgPong = 0x0049_0009;
     internal const uint RetailSmsgCompressedPacket = 0x0049_000D;
     internal const uint RetailSmsgEnterEncryptedModeDefault = 0x0049_0004;
