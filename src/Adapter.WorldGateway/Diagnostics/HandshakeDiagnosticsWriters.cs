@@ -226,7 +226,7 @@ internal static class HandshakeDiagnosticsWriters
             fixturePath = Path.Combine(projectRoot, fixturePath);
         }
 
-        if (!TryLoadHexPayloadFromFile(
+        if (!HexPayloadLoader.TryLoadHexPayloadFromFile(
                 fixturePath,
                 projectRoot,
                 out byte[] expectedFrame,
@@ -705,105 +705,17 @@ internal static class HandshakeDiagnosticsWriters
                 }
 
                 string payloadHex = payloadElement.GetString() ?? string.Empty;
-                return TryParseHexPayload(payloadHex, fixturePath, out payload, out error);
+                return HexPayloadLoader.TryParseHexPayload(payloadHex, fixturePath, out payload, out error);
             }
 
             string rawHex = File.ReadAllText(fixturePath, Encoding.ASCII);
-            return TryParseHexPayload(rawHex, fixturePath, out payload, out error);
+            return HexPayloadLoader.TryParseHexPayload(rawHex, fixturePath, out payload, out error);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             error = ex.Message;
             return false;
         }
-    }
-
-    private static bool TryParseHexPayload(string rawHex, string sourcePath, out byte[] payload, out string? error)
-    {
-        payload = Array.Empty<byte>();
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(rawHex))
-        {
-            error = $"Hex payload is empty in {sourcePath}";
-            return false;
-        }
-
-        string normalized = new string(rawHex.Where(static c => !char.IsWhiteSpace(c)).ToArray());
-        if (normalized.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            normalized = normalized[2..];
-        }
-
-        if (normalized.Length == 0)
-        {
-            error = $"Hex payload is empty after trim in {sourcePath}";
-            return false;
-        }
-
-        if ((normalized.Length & 1) != 0)
-        {
-            error = $"Hex payload length must be even in {sourcePath}. Length={normalized.Length}";
-            return false;
-        }
-
-        if (!IsHex(normalized))
-        {
-            error = $"Hex payload contains invalid characters in {sourcePath}";
-            return false;
-        }
-
-        try
-        {
-            payload = Convert.FromHexString(normalized);
-            return true;
-        }
-        catch (FormatException ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-    }
-
-    private static bool TryLoadHexPayloadFromFile(
-        string rawPath,
-        string projectRoot,
-        out byte[] payload,
-        out string? error,
-        out string? resolvedPath)
-    {
-        payload = Array.Empty<byte>();
-        error = null;
-        resolvedPath = null;
-
-        if (string.IsNullOrWhiteSpace(rawPath))
-        {
-            error = "empty payload path";
-            return false;
-        }
-
-        resolvedPath = Path.IsPathRooted(rawPath)
-            ? rawPath
-            : Path.Combine(projectRoot, rawPath);
-
-        if (!File.Exists(resolvedPath))
-        {
-            error = "payload file not found";
-            return false;
-        }
-
-        string text;
-        try
-        {
-            text = File.ReadAllText(resolvedPath, Encoding.UTF8);
-        }
-        catch (Exception ex)
-        {
-            error = $"failed to read payload file: {ex.Message}";
-            return false;
-        }
-
-        return TryParseHexPayload(text, resolvedPath, out payload, out error);
     }
 
     private static string ResolveFixturePath(WorldProxyOptions options, string projectRoot)
@@ -817,28 +729,6 @@ internal static class HandshakeDiagnosticsWriters
         return Path.Combine(projectRoot, "docs", "handshake", "fixtures", "enter_encrypted_mode.synthetic.v1.json");
     }
 
-    private static bool IsHex(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return false;
-        }
-
-        for (int i = 0; i < value.Length; i++)
-        {
-            char ch = value[i];
-            bool isHexDigit =
-                (ch >= '0' && ch <= '9') ||
-                (ch >= 'a' && ch <= 'f') ||
-                (ch >= 'A' && ch <= 'F');
-            if (!isHexDigit)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
 
     private static string BuildHexWindow(ReadOnlySpan<byte> bytes, int startOffset)
     {

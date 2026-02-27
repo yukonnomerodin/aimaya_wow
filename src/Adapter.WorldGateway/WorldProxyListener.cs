@@ -319,7 +319,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeRetailSequencePreludePayloadHex))
         {
             _probeRetailSequencePreludePayloadProvided = true;
-            _probeRetailSequencePreludePayloadValid = TryParseFixedLengthHex(
+            _probeRetailSequencePreludePayloadValid = HexPayloadLoader.TryParseFixedLengthHex(
                 _options.ProbeRetailSequencePreludePayloadHex,
                 expectedLengthBytes: 4,
                 out byte[] parsedPreludePayload,
@@ -337,7 +337,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeAuthResponseReplayPayloadHexPath))
         {
             _probeAuthResponseReplayPayloadProvided = true;
-            _probeAuthResponseReplayPayloadValid = TryLoadHexPayloadFromFile(
+            _probeAuthResponseReplayPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeAuthResponseReplayPayloadHexPath,
                 out byte[] parsedAuthResponsePayload,
                 out string? replayPayloadError,
@@ -357,7 +357,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeAuthResponseReplayCompressedPayloadHexPath))
         {
             _probeAuthResponseReplayCompressedPayloadProvided = true;
-            _probeAuthResponseReplayCompressedPayloadValid = TryLoadHexPayloadFromFile(
+            _probeAuthResponseReplayCompressedPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeAuthResponseReplayCompressedPayloadHexPath,
                 out byte[] parsedCompressedAuthResponsePayload,
                 out string? replayCompressedPayloadError,
@@ -377,7 +377,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeSetTimeZoneInformationPayloadHexPath))
         {
             _probeSetTimeZoneInformationPayloadProvided = true;
-            _probeSetTimeZoneInformationPayloadValid = TryLoadHexPayloadFromFile(
+            _probeSetTimeZoneInformationPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeSetTimeZoneInformationPayloadHexPath,
                 out byte[] parsedTimeZonePayload,
                 out string? timeZonePayloadError,
@@ -397,7 +397,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeFeatureSystemStatusGlueScreenPayloadHexPath))
         {
             _probeFeatureSystemStatusGlueScreenPayloadProvided = true;
-            _probeFeatureSystemStatusGlueScreenPayloadValid = TryLoadHexPayloadFromFile(
+            _probeFeatureSystemStatusGlueScreenPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeFeatureSystemStatusGlueScreenPayloadHexPath,
                 out byte[] parsedFeaturePayload,
                 out string? featurePayloadError,
@@ -417,7 +417,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeMirrorVarsPayloadHexPath))
         {
             _probeMirrorVarsPayloadProvided = true;
-            _probeMirrorVarsPayloadValid = TryLoadHexPayloadFromFile(
+            _probeMirrorVarsPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeMirrorVarsPayloadHexPath,
                 out byte[] parsedMirrorVarsPayload,
                 out string? mirrorVarsPayloadError,
@@ -437,7 +437,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeCacheVersionPayloadHexPath))
         {
             _probeCacheVersionPayloadProvided = true;
-            _probeCacheVersionPayloadValid = TryLoadHexPayloadFromFile(
+            _probeCacheVersionPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeCacheVersionPayloadHexPath,
                 out byte[] parsedCacheVersionPayload,
                 out string? cacheVersionPayloadError,
@@ -457,7 +457,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeAvailableHotfixesPayloadHexPath))
         {
             _probeAvailableHotfixesPayloadProvided = true;
-            _probeAvailableHotfixesPayloadValid = TryLoadHexPayloadFromFile(
+            _probeAvailableHotfixesPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeAvailableHotfixesPayloadHexPath,
                 out byte[] parsedAvailableHotfixesPayload,
                 out string? availableHotfixesPayloadError,
@@ -477,7 +477,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeAccountDataTimesPayloadHexPath))
         {
             _probeAccountDataTimesPayloadProvided = true;
-            _probeAccountDataTimesPayloadValid = TryLoadHexPayloadFromFile(
+            _probeAccountDataTimesPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeAccountDataTimesPayloadHexPath,
                 out byte[] parsedAccountDataTimesPayload,
                 out string? accountDataTimesPayloadError,
@@ -497,7 +497,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeTutorialFlagsPayloadHexPath))
         {
             _probeTutorialFlagsPayloadProvided = true;
-            _probeTutorialFlagsPayloadValid = TryLoadHexPayloadFromFile(
+            _probeTutorialFlagsPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeTutorialFlagsPayloadHexPath,
                 out byte[] parsedTutorialFlagsPayload,
                 out string? tutorialFlagsPayloadError,
@@ -517,7 +517,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeBattleNetConnectionStatusPayloadHexPath))
         {
             _probeBattleNetConnectionStatusPayloadProvided = true;
-            _probeBattleNetConnectionStatusPayloadValid = TryLoadHexPayloadFromFile(
+            _probeBattleNetConnectionStatusPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
                 _options.ProbeBattleNetConnectionStatusPayloadHexPath,
                 out byte[] parsedBattleNetConnectionStatusPayload,
                 out string? battleNetConnectionStatusPayloadError,
@@ -8405,128 +8405,6 @@ public sealed class WorldProxyListener : BackgroundService
         return true;
     }
 
-    private static bool TryParseFixedLengthHex(string rawValue, int expectedLengthBytes, out byte[] bytes, out string? error)
-    {
-        bytes = Array.Empty<byte>();
-        error = null;
-
-        if (string.IsNullOrWhiteSpace(rawValue))
-        {
-            error = "empty hex value";
-            return false;
-        }
-
-        string normalized = rawValue.Trim();
-        if (normalized.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            normalized = normalized[2..];
-        }
-
-        if (normalized.Length != expectedLengthBytes * 2)
-        {
-            error = $"expected {expectedLengthBytes * 2} hex chars but got {normalized.Length}";
-            return false;
-        }
-
-        if (!IsHex(normalized))
-        {
-            error = "non-hex characters detected";
-            return false;
-        }
-
-        try
-        {
-            bytes = Convert.FromHexString(normalized);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            error = ex.Message;
-            bytes = Array.Empty<byte>();
-            return false;
-        }
-    }
-
-    private static bool TryLoadHexPayloadFromFile(
-        string rawPath,
-        out byte[] payload,
-        out string? error,
-        out string? resolvedPath)
-    {
-        payload = Array.Empty<byte>();
-        error = null;
-        resolvedPath = null;
-
-        if (string.IsNullOrWhiteSpace(rawPath))
-        {
-            error = "empty payload path";
-            return false;
-        }
-
-        resolvedPath = Path.IsPathRooted(rawPath)
-            ? rawPath
-            : Path.Combine(WorldGatewayPathResolver.ResolveProjectRoot(), rawPath);
-
-        if (!File.Exists(resolvedPath))
-        {
-            error = "payload file not found";
-            return false;
-        }
-
-        string text;
-        try
-        {
-            text = File.ReadAllText(resolvedPath, Encoding.UTF8);
-        }
-        catch (Exception ex)
-        {
-            error = $"failed to read payload file: {ex.Message}";
-            return false;
-        }
-
-        string normalized = new string(text.Where(c => !char.IsWhiteSpace(c)).ToArray());
-        if (normalized.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            normalized = normalized[2..];
-        }
-
-        if (normalized.Length == 0)
-        {
-            error = "payload file is empty";
-            return false;
-        }
-
-        if ((normalized.Length & 1) != 0)
-        {
-            error = "payload hex length must be even";
-            return false;
-        }
-
-        if (!IsHex(normalized))
-        {
-            error = "payload file contains non-hex characters";
-            return false;
-        }
-
-        try
-        {
-            payload = Convert.FromHexString(normalized);
-            if (payload.Length == 0)
-            {
-                error = "payload parsed as zero bytes";
-                return false;
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            error = $"failed to parse payload hex: {ex.Message}";
-            payload = Array.Empty<byte>();
-            return false;
-        }
-    }
-
     private static IPAddress ParseBindAddress(string address)
     {
         if (string.IsNullOrWhiteSpace(address) ||
@@ -8544,5 +8422,6 @@ public sealed class WorldProxyListener : BackgroundService
         return IPAddress.Parse(address);
     }
 }
+
 
 
