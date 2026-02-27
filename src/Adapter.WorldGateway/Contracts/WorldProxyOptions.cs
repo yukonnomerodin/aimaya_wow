@@ -92,7 +92,7 @@ public sealed class WorldProxyOptions
     public bool ProbeCompressedAuthResponseChecksumPayloadOnly { get; init; } = false;
 
     [Range(0, 4294967295)]
-    public long ProbeCompressedAuthResponseChecksumSeed { get; init; } = 0x9827D8F1u;
+    public long ProbeCompressedAuthResponseChecksumSeed { get; init; } = (long)WorldGatewayProtocolConstants.TrinityCompressionAdlerSeed;
 
     public bool ProbeCompressedAuthResponseCompressedChecksumIncludeMetadata { get; init; } = false;
 
@@ -193,11 +193,11 @@ public sealed class WorldProxyOptions
 
     public bool RetailWorldPacketCryptUseEmptyAad { get; init; } = false;
 
-    public string RetailWorldPacketCryptNonceLayout { get; init; } = "counter_le_magic_le";
+    public string RetailWorldPacketCryptNonceLayout { get; init; } = WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultNonceLayout;
 
-    public string RetailWorldPacketCryptServerNonceMagic { get; init; } = "srvr";
+    public string RetailWorldPacketCryptServerNonceMagic { get; init; } = WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultServerNonceMagic;
 
-    public string RetailWorldPacketCryptClientNonceMagic { get; init; } = "clnt";
+    public string RetailWorldPacketCryptClientNonceMagic { get; init; } = WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultClientNonceMagic;
 
     public string ProbeDropDeferredOpcode { get; init; } = string.Empty;
 

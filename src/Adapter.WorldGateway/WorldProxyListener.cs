@@ -34,7 +34,6 @@ public sealed partial class WorldProxyListener : BackgroundService
     private static readonly byte[] Sha1ZeroPrefix = [0, 0, 0, 0];
     private static readonly byte[] ServerConnectionInitializer = Encoding.ASCII.GetBytes("WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT - V2\n");
     private static readonly byte[] ClientConnectionInitializer = Encoding.ASCII.GetBytes("WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER - V2\n");
-    private const uint TrinityCompressionAdlerSeed = 0x9827D8F1;
     private const int TrinityCompressionThresholdBytes = 0x400;
     private const int AuthResponseReplayOptionalBitsOffset = 4;
     private const byte AuthResponseReplaySuccessInfoMask = 0x80;
@@ -904,7 +903,9 @@ public sealed partial class WorldProxyListener : BackgroundService
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: compressed AUTH_RESPONSE checksum seed=0x{ChecksumSeed:X8}.",
-                RetailCompressionCodec.NormalizeChecksumSeed(_options.ProbeCompressedAuthResponseChecksumSeed, TrinityCompressionAdlerSeed));
+                RetailCompressionCodec.NormalizeChecksumSeed(
+                    _options.ProbeCompressedAuthResponseChecksumSeed,
+                    WorldGatewayProtocolConstants.TrinityCompressionAdlerSeed));
         }
 
         if (_options.ProbeCompressedAuthResponseCompressedChecksumIncludeMetadata)
@@ -966,21 +967,30 @@ public sealed partial class WorldProxyListener : BackgroundService
                 "WorldProxy probe enabled: RetailWorldPacketCrypt uses empty AAD (zero-length associated data).");
         }
 
-        if (!string.Equals(_options.RetailWorldPacketCryptNonceLayout, "counter_le_magic_le", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(
+                _options.RetailWorldPacketCryptNonceLayout,
+                WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultNonceLayout,
+                StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: RetailWorldPacketCrypt nonce layout override active ({NonceLayout}).",
                 _options.RetailWorldPacketCryptNonceLayout);
         }
 
-        if (!string.Equals(_options.RetailWorldPacketCryptServerNonceMagic, "srvr", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(
+                _options.RetailWorldPacketCryptServerNonceMagic,
+                WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultServerNonceMagic,
+                StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: RetailWorldPacketCrypt server nonce magic override active ({ServerNonceMagic}).",
                 _options.RetailWorldPacketCryptServerNonceMagic);
         }
 
-        if (!string.Equals(_options.RetailWorldPacketCryptClientNonceMagic, "clnt", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(
+                _options.RetailWorldPacketCryptClientNonceMagic,
+                WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultClientNonceMagic,
+                StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: RetailWorldPacketCrypt client nonce magic override active ({ClientNonceMagic}).",

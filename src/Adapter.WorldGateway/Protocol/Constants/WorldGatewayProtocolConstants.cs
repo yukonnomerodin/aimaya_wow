@@ -1,0 +1,17 @@
+namespace Adapter.WorldGateway;
+
+/// <summary>
+/// Shared protocol constants that are not opcode values.
+/// </summary>
+internal static class WorldGatewayProtocolConstants
+{
+    internal const uint TrinityCompressionAdlerSeed = 0x9827D8F1;
+    internal const string RetailWorldPacketCryptNonceLayoutCounterLeMagicLe = "counter_le_magic_le";
+    internal const string RetailWorldPacketCryptNonceLayoutCounterBeMagicLe = "counter_be_magic_le";
+    internal const string RetailWorldPacketCryptNonceLayoutMagicLeCounterBe = "magic_le_counter_be";
+    internal const string RetailWorldPacketCryptDefaultNonceLayout = RetailWorldPacketCryptNonceLayoutCounterLeMagicLe;
+    internal const string RetailWorldPacketCryptDefaultServerNonceMagic = "srvr";
+    internal const string RetailWorldPacketCryptDefaultClientNonceMagic = "clnt";
+    internal const uint RetailWorldPacketCryptServerNonceMagicUInt32 = 0x52565253; // "SRVR"
+    internal const uint RetailWorldPacketCryptClientNonceMagicUInt32 = 0x544E4C43; // "CLNT"
+}

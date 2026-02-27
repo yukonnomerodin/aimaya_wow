@@ -6,8 +6,6 @@ namespace Adapter.WorldGateway;
 
 internal sealed class TrinityWorldPacketCrypt : IDisposable
 {
-    private const uint ClientNonceMagic = 0x544E4C43; // "CLNT"
-    private const uint ServerNonceMagic = 0x52565253; // "SRVR"
     private const int NonceBytes = 12;
     private const int HeaderBytes = 16;
     private const int MinFrameBytes = 20;
@@ -30,9 +28,9 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
         bool useSizeAsAad = false,
         int aadSizeBytes = 4,
         bool useEmptyAad = false,
-        string nonceLayout = "counter_le_magic_le",
-        string serverNonceMagic = "srvr",
-        string clientNonceMagic = "clnt")
+        string nonceLayout = WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultNonceLayout,
+        string serverNonceMagic = WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultServerNonceMagic,
+        string clientNonceMagic = WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultClientNonceMagic)
     {
         if (aadSizeBytes != 2 && aadSizeBytes != 4)
         {
@@ -247,9 +245,9 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
         string normalized = rawLayout.Trim().ToLowerInvariant();
         return normalized switch
         {
-            "counter_le_magic_le" => RetailWorldPacketCryptNonceLayout.CounterLeMagicLe,
-            "counter_be_magic_le" => RetailWorldPacketCryptNonceLayout.CounterBeMagicLe,
-            "magic_le_counter_be" => RetailWorldPacketCryptNonceLayout.MagicLeCounterBe,
+            WorldGatewayProtocolConstants.RetailWorldPacketCryptNonceLayoutCounterLeMagicLe => RetailWorldPacketCryptNonceLayout.CounterLeMagicLe,
+            WorldGatewayProtocolConstants.RetailWorldPacketCryptNonceLayoutCounterBeMagicLe => RetailWorldPacketCryptNonceLayout.CounterBeMagicLe,
+            WorldGatewayProtocolConstants.RetailWorldPacketCryptNonceLayoutMagicLeCounterBe => RetailWorldPacketCryptNonceLayout.MagicLeCounterBe,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(rawLayout),
                 rawLayout,
@@ -261,14 +259,14 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
     {
         if (string.IsNullOrWhiteSpace(rawMagic))
         {
-            return ServerNonceMagic;
+            return WorldGatewayProtocolConstants.RetailWorldPacketCryptServerNonceMagicUInt32;
         }
 
         string normalized = rawMagic.Trim().ToLowerInvariant();
         return normalized switch
         {
-            "srvr" => ServerNonceMagic,
-            "clnt" => ClientNonceMagic,
+            WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultServerNonceMagic => WorldGatewayProtocolConstants.RetailWorldPacketCryptServerNonceMagicUInt32,
+            WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultClientNonceMagic => WorldGatewayProtocolConstants.RetailWorldPacketCryptClientNonceMagicUInt32,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(rawMagic),
                 rawMagic,
@@ -280,14 +278,14 @@ internal sealed class TrinityWorldPacketCrypt : IDisposable
     {
         if (string.IsNullOrWhiteSpace(rawMagic))
         {
-            return ClientNonceMagic;
+            return WorldGatewayProtocolConstants.RetailWorldPacketCryptClientNonceMagicUInt32;
         }
 
         string normalized = rawMagic.Trim().ToLowerInvariant();
         return normalized switch
         {
-            "clnt" => ClientNonceMagic,
-            "srvr" => ServerNonceMagic,
+            WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultClientNonceMagic => WorldGatewayProtocolConstants.RetailWorldPacketCryptClientNonceMagicUInt32,
+            WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultServerNonceMagic => WorldGatewayProtocolConstants.RetailWorldPacketCryptServerNonceMagicUInt32,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(rawMagic),
                 rawMagic,

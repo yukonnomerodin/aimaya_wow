@@ -118,7 +118,7 @@ public sealed partial class WorldProxyListener
             bool probeCompressedAuthResponseUseStatefulDeflateSyncFlush = false,
             int probeCompressedAuthResponseRawDeflateLevel = -1,
             bool probeCompressedAuthResponseChecksumPayloadOnly = false,
-            long probeCompressedAuthResponseChecksumSeed = TrinityCompressionAdlerSeed,
+            long probeCompressedAuthResponseChecksumSeed = WorldGatewayProtocolConstants.TrinityCompressionAdlerSeed,
             bool probeCompressedAuthResponseCompressedChecksumIncludeMetadata = false,
             byte[]? probeRetailSequencePreludePayload = null,
             AuthResponseFuzzMutation authResponseFuzzMutation = default,
@@ -187,7 +187,9 @@ public sealed partial class WorldProxyListener
             _probeCompressedAuthResponseUseStatefulDeflateSyncFlush = probeCompressedAuthResponseUseStatefulDeflateSyncFlush;
             _probeCompressedAuthResponseRawDeflateLevel = RetailCompressionCodec.NormalizeDeflateLevel(probeCompressedAuthResponseRawDeflateLevel);
             _probeCompressedAuthResponseChecksumPayloadOnly = probeCompressedAuthResponseChecksumPayloadOnly;
-            _probeCompressedAuthResponseChecksumSeed = RetailCompressionCodec.NormalizeChecksumSeed(probeCompressedAuthResponseChecksumSeed, TrinityCompressionAdlerSeed);
+            _probeCompressedAuthResponseChecksumSeed = RetailCompressionCodec.NormalizeChecksumSeed(
+                probeCompressedAuthResponseChecksumSeed,
+                WorldGatewayProtocolConstants.TrinityCompressionAdlerSeed);
             _probeCompressedAuthResponseCompressedChecksumIncludeMetadata = probeCompressedAuthResponseCompressedChecksumIncludeMetadata;
             _probeRetailSequencePreludePayload = probeRetailSequencePreludePayload is { Length: 4 }
                 ? probeRetailSequencePreludePayload.ToArray()

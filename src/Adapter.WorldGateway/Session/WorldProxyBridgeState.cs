@@ -96,9 +96,9 @@ internal sealed class WorldProxyBridgeState
         bool retailWorldPacketCryptUseSizeAsAad = false,
         int retailWorldPacketCryptAadSizeBytes = 4,
         bool retailWorldPacketCryptUseEmptyAad = false,
-        string retailWorldPacketCryptNonceLayout = "counter_le_magic_le",
-        string retailWorldPacketCryptServerNonceMagic = "srvr",
-        string retailWorldPacketCryptClientNonceMagic = "clnt")
+        string retailWorldPacketCryptNonceLayout = WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultNonceLayout,
+        string retailWorldPacketCryptServerNonceMagic = WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultServerNonceMagic,
+        string retailWorldPacketCryptClientNonceMagic = WorldGatewayProtocolConstants.RetailWorldPacketCryptDefaultClientNonceMagic)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _retailWorldPacketCryptServerInitialCounter = retailWorldPacketCryptServerInitialCounter;
