@@ -2580,7 +2580,7 @@ public sealed class WorldProxyListener : BackgroundService
                                 bool isAuthResponseFrame = frame.Opcode == _probeAuthResponseOpcode;
                                 if (isAuthResponseFrame)
                                 {
-                                    bool plainEnvelopeOk = TryValidateRetailWorldEnvelope(frame.Frame, out string plainEnvelopeActual);
+                                    bool plainEnvelopeOk = RetailEnvelopeBuilder.TryValidateRetailWorldEnvelope(frame.Frame, out string plainEnvelopeActual);
                                     bridgeState.MarkTemporalInvariant(
                                         name: "auth_response_plaintext_envelope_invariant",
                                         passed: plainEnvelopeOk,
@@ -2627,7 +2627,7 @@ public sealed class WorldProxyListener : BackgroundService
 
                                 if (isPreludeFrame)
                                 {
-                                    bool protectedEnvelopeOk = TryValidateRetailWorldEnvelope(protectedFrame, out string preludeEnvelopeActual);
+                                    bool protectedEnvelopeOk = RetailEnvelopeBuilder.TryValidateRetailWorldEnvelope(protectedFrame, out string preludeEnvelopeActual);
                                     uint protectedSize = protectedEnvelopeOk
                                         ? BinaryPrimitives.ReadUInt32LittleEndian(protectedFrame.AsSpan(0, 4))
                                         : 0u;
@@ -2657,7 +2657,7 @@ public sealed class WorldProxyListener : BackgroundService
 
                                 if (isAuthResponseFrame)
                                 {
-                                    bool protectedEnvelopeOk = TryValidateRetailWorldEnvelope(protectedFrame, out string protectedEnvelopeActual);
+                                    bool protectedEnvelopeOk = RetailEnvelopeBuilder.TryValidateRetailWorldEnvelope(protectedFrame, out string protectedEnvelopeActual);
                                     uint protectedSize = protectedEnvelopeOk
                                         ? BinaryPrimitives.ReadUInt32LittleEndian(protectedFrame.AsSpan(0, 4))
                                         : 0u;
@@ -3122,19 +3122,6 @@ public sealed class WorldProxyListener : BackgroundService
         return frame;
     }
 
-    private static byte[] BuildRetailWorldFrame(uint opcode, ReadOnlySpan<byte> payload)
-    {
-        uint bodyLength = checked((uint)(payload.Length + 4)); // opcode included
-        byte[] frame = GC.AllocateUninitializedArray<byte>(16 + (int)bodyLength);
-        Span<byte> span = frame;
-
-        BinaryPrimitives.WriteUInt32LittleEndian(span[..4], bodyLength);
-        span.Slice(4, 12).Clear(); // zeroed transport tag in non-encrypted world mode
-        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(16, 4), opcode);
-        payload.CopyTo(span.Slice(20, payload.Length));
-        return frame;
-    }
-
     private static bool TryBuildRetailCompressedPacketFrame(
         ReadOnlySpan<byte> plainFrame,
         bool forceCompressionEnvelope,
@@ -3230,34 +3217,8 @@ public sealed class WorldProxyListener : BackgroundService
             compressedChecksum);
         compressedPayload.CopyTo(payloadSpan.Slice(12));
 
-        compressedFrame = BuildRetailWorldFrame(RetailOpcodeSmsgCompressedPacket, payloadSpan);
+        compressedFrame = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgCompressedPacket, payloadSpan);
         return true;
-    }
-
-    private static bool TryValidateRetailWorldEnvelope(ReadOnlySpan<byte> frame, out string actual)
-    {
-        actual = string.Empty;
-
-        if (frame.Length < 20)
-        {
-            actual = $"frame_too_short={frame.Length}";
-            return false;
-        }
-
-        uint size = BinaryPrimitives.ReadUInt32LittleEndian(frame.Slice(0, 4));
-        if (size < 4)
-        {
-            actual = $"invalid_size={size}";
-            return false;
-        }
-
-        int expectedFrameBytes = checked((int)size + 16);
-        uint opcode = BinaryPrimitives.ReadUInt32LittleEndian(frame.Slice(16, 4));
-        int payloadBytes = checked((int)size - 4);
-
-        actual =
-            $"size={size};opcode=0x{opcode:X8};payload_bytes={payloadBytes};frame_bytes={frame.Length};expected_frame_bytes={expectedFrameBytes};tag_bytes=12";
-        return frame.Length == expectedFrameBytes;
     }
 
     private static bool TryPrepareRetailEnterEncryptedModeFrame(
@@ -3499,7 +3460,7 @@ public sealed class WorldProxyListener : BackgroundService
             return false;
         }
 
-        retailFrame = BuildRetailWorldFrame(retailOpcode, payload);
+        retailFrame = RetailEnvelopeBuilder.BuildRetailWorldFrame(retailOpcode, payload);
         proof = new EnterEncryptedModeProof(
             TimestampUtc: DateTimeOffset.UtcNow.ToString("O"),
             RetailOpcode: retailOpcode,
@@ -3750,7 +3711,7 @@ public sealed class WorldProxyListener : BackgroundService
                 payload.FlushBits();
             }
 
-            retailFrame = BuildRetailWorldFrame(retailOpcode, payload.WrittenSpan);
+            retailFrame = RetailEnvelopeBuilder.BuildRetailWorldFrame(retailOpcode, payload.WrittenSpan);
             retailWorldEncryptKey32 = encryptionKey32.ToArray();
             proof = new EnterEncryptedModeProof(
                 TimestampUtc: DateTimeOffset.UtcNow.ToString("O"),
@@ -4153,7 +4114,7 @@ public sealed class WorldProxyListener : BackgroundService
             // crypto-framing faults from account-data schema faults.
             var resultOnlyPayload = new BitPackedBufferWriter(initialCapacity: 8);
             resultOnlyPayload.WriteUInt32LE(probeResultOnlyCode);
-            retailFrame = BuildRetailWorldFrame(retailAuthResponseOpcode, resultOnlyPayload.WrittenSpan);
+            retailFrame = RetailEnvelopeBuilder.BuildRetailWorldFrame(retailAuthResponseOpcode, resultOnlyPayload.WrittenSpan);
             return true;
         }
 
@@ -4281,7 +4242,7 @@ public sealed class WorldProxyListener : BackgroundService
             payload.FlushBits();
         }
 
-        retailFrame = BuildRetailWorldFrame(retailAuthResponseOpcode, payload.WrittenSpan);
+        retailFrame = RetailEnvelopeBuilder.BuildRetailWorldFrame(retailAuthResponseOpcode, payload.WrittenSpan);
         return true;
     }
 
@@ -4425,7 +4386,7 @@ public sealed class WorldProxyListener : BackgroundService
         payload.WriteAscii(RealmName); // RealmNameActual
         payload.WriteAscii(RealmName); // RealmNameNormalized
 
-        return BuildRetailWorldFrame(retailAuthResponseOpcode, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(retailAuthResponseOpcode, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailAuthSequencePreludeFrame(ReadOnlySpan<byte> payloadBytes)
@@ -4437,7 +4398,7 @@ public sealed class WorldProxyListener : BackgroundService
 
         Span<byte> payload = stackalloc byte[4];
         payloadBytes.CopyTo(payload);
-        return BuildRetailWorldFrame(RetailOpcodeSmsgAuthSequencePrelude, payload);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAuthSequencePrelude, payload);
     }
 
     private static byte[] BuildRetailSetTimeZoneInformationFrame()
@@ -4454,7 +4415,7 @@ public sealed class WorldProxyListener : BackgroundService
         payload.WriteAscii(timezone);
         payload.WriteAscii(timezone);
 
-        return BuildRetailWorldFrame(RetailOpcodeSmsgSetTimeZoneInformation, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgSetTimeZoneInformation, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailFeatureSystemStatusGlueScreenFrame(bool trinitySemantics = false)
@@ -4545,7 +4506,7 @@ public sealed class WorldProxyListener : BackgroundService
         payload.WriteUInt32LE(0); // EventRealmQueues
         payload.WriteInt32LE(8); // AvailableGameModeIDs[0]
 
-        return BuildRetailWorldFrame(RetailOpcodeSmsgFeatureSystemStatusGlueScreen, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgFeatureSystemStatusGlueScreen, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailEmptyEnumCharactersResultFrame()
@@ -4598,7 +4559,7 @@ public sealed class WorldProxyListener : BackgroundService
             payload.FlushBits();
         }
 
-        return BuildRetailWorldFrame(RetailOpcodeSmsgEnumCharactersResult, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgEnumCharactersResult, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailMirrorVarsFrame()
@@ -4632,7 +4593,7 @@ public sealed class WorldProxyListener : BackgroundService
             payload.WriteAscii(vars[i].Value);
         }
 
-        return BuildRetailWorldFrame(RetailOpcodeSmsgMirrorVars, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgMirrorVars, payload.WrittenSpan);
     }
 
     private static uint BuildRetailVirtualRealmAddress(uint acoreRealmId)
@@ -4646,7 +4607,7 @@ public sealed class WorldProxyListener : BackgroundService
         ReadOnlySpan<byte> payload = acoreCacheVersionPayload is { Length: 4 }
             ? acoreCacheVersionPayload
             : [0, 0, 0, 0];
-        return BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, payload);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, payload);
     }
 
     private static byte[] BuildRetailAvailableHotfixesFrame(uint acoreRealmId)
@@ -4654,7 +4615,7 @@ public sealed class WorldProxyListener : BackgroundService
         var payload = new BitPackedBufferWriter(initialCapacity: 8);
         payload.WriteInt32LE(unchecked((int)BuildRetailVirtualRealmAddress(acoreRealmId))); // VirtualRealmAddress
         payload.WriteUInt32LE(0); // Hotfixes count
-        return BuildRetailWorldFrame(RetailOpcodeSmsgAvailableHotfixes, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAvailableHotfixes, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailAccountDataTimesFrame()
@@ -4670,7 +4631,7 @@ public sealed class WorldProxyListener : BackgroundService
             payload.WriteInt64LE(0); // AccountTimes[i]
         }
 
-        return BuildRetailWorldFrame(RetailOpcodeSmsgAccountDataTimes, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAccountDataTimes, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailTutorialFlagsFrame(byte[]? acoreTutorialFlagsPayload)
@@ -4678,7 +4639,7 @@ public sealed class WorldProxyListener : BackgroundService
         ReadOnlySpan<byte> payload = acoreTutorialFlagsPayload is { Length: RetailTutorialValuesCount * sizeof(uint) }
             ? acoreTutorialFlagsPayload
             : new byte[RetailTutorialValuesCount * sizeof(uint)];
-        return BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, payload);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, payload);
     }
 
     private static byte[] BuildRetailBattleNetConnectionStatusFrame(byte state, bool suppressNotification)
@@ -4687,7 +4648,7 @@ public sealed class WorldProxyListener : BackgroundService
         payload.WriteBits((ulong)(state & 0x03), 2); // State
         payload.WriteBit(suppressNotification); // SuppressNotification
         payload.FlushBits();
-        return BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetConnectionStatus, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetConnectionStatus, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailAccountItemCollectionDataFrame()
@@ -4700,7 +4661,7 @@ public sealed class WorldProxyListener : BackgroundService
         payload.WriteUInt32LE(0); // Items count
         payload.WriteBit(false); // Unknown1110_2
         payload.FlushBits();
-        return BuildRetailWorldFrame(RetailOpcodeSmsgAccountItemCollectionData, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAccountItemCollectionData, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailSocialContractRequestResponseFrame(bool showSocialContract)
@@ -4708,7 +4669,7 @@ public sealed class WorldProxyListener : BackgroundService
         var payload = new BitPackedBufferWriter(initialCapacity: 1);
         payload.WriteBit(showSocialContract);
         payload.FlushBits();
-        return BuildRetailWorldFrame(RetailOpcodeSmsgSocialContractRequestResponse, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgSocialContractRequestResponse, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailUndeleteCooldownStatusResponseFrame(
@@ -4721,7 +4682,7 @@ public sealed class WorldProxyListener : BackgroundService
         payload.WriteUInt32LE(currentCooldownSeconds);
         payload.WriteBit(onCooldown);
         payload.FlushBits();
-        return BuildRetailWorldFrame(RetailOpcodeSmsgUndeleteCooldownStatusResponse, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgUndeleteCooldownStatusResponse, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailDbReplyFrame(
@@ -4742,7 +4703,7 @@ public sealed class WorldProxyListener : BackgroundService
             payload.WriteBytes(data);
         }
 
-        return BuildRetailWorldFrame(RetailOpcodeSmsgDbReply, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgDbReply, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailBattleNetResponseFrame(
@@ -4763,14 +4724,14 @@ public sealed class WorldProxyListener : BackgroundService
             payload.WriteBytes(data);
         }
 
-        return BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetResponse, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetResponse, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailServerTimeOffsetFrame(long unixTimeSeconds)
     {
         var payload = new BitPackedBufferWriter(initialCapacity: sizeof(long));
         payload.WriteInt64LE(unixTimeSeconds);
-        return BuildRetailWorldFrame(RetailOpcodeSmsgServerTimeOffset, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgServerTimeOffset, payload.WrittenSpan);
     }
 
     private static byte[] BuildRetailHotfixConnectFrame()
@@ -4778,7 +4739,7 @@ public sealed class WorldProxyListener : BackgroundService
         var payload = new BitPackedBufferWriter(initialCapacity: 8);
         payload.WriteUInt32LE(0); // Hotfixes count
         payload.WriteUInt32LE(0); // HotfixContent size
-        return BuildRetailWorldFrame(RetailOpcodeSmsgHotfixConnect, payload.WrittenSpan);
+        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgHotfixConnect, payload.WrittenSpan);
     }
 
     private static bool TryDecodeAzerothAuthChallenge(ReadOnlySequence<byte> buffer, out AcoreAuthChallengeDump dump)
@@ -5709,7 +5670,7 @@ public sealed class WorldProxyListener : BackgroundService
                     {
                         Span<byte> resultOnlyPayload = stackalloc byte[sizeof(uint)];
                         BinaryPrimitives.WriteUInt32LittleEndian(resultOnlyPayload, 0u); // ERROR_OK
-                        mapped = BuildRetailWorldFrame(_probeAuthResponseOpcode, resultOnlyPayload);
+                        mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(_probeAuthResponseOpcode, resultOnlyPayload);
                     }
                     else
                     {
@@ -5832,11 +5793,11 @@ public sealed class WorldProxyListener : BackgroundService
                         replayPayload = patchedReplayPayload;
                     }
 
-                    mapped = BuildRetailWorldFrame(_probeAuthResponseOpcode, replayPayload);
+                    mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(_probeAuthResponseOpcode, replayPayload);
 
                     if (_probeAuthResponseReplayCompressedPayload.Length > 0)
                     {
-                        mapped = BuildRetailWorldFrame(
+                        mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(
                             RetailOpcodeSmsgCompressedPacket,
                             _probeAuthResponseReplayCompressedPayload);
                         authResponseAlreadyCompressed = true;
@@ -5941,49 +5902,49 @@ public sealed class WorldProxyListener : BackgroundService
                     }
 
                     byte[] timezone = _probeSetTimeZoneInformationPayload.Length > 0
-                        ? BuildRetailWorldFrame(RetailOpcodeSmsgSetTimeZoneInformation, _probeSetTimeZoneInformationPayload)
+                        ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgSetTimeZoneInformation, _probeSetTimeZoneInformationPayload)
                         : BuildRetailSetTimeZoneInformationFrame();
                     bootstrapBuffer.Write(timezone);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgSetTimeZoneInformation:X8}");
 
                     byte[] features = _probeFeatureSystemStatusGlueScreenPayload.Length > 0
-                        ? BuildRetailWorldFrame(RetailOpcodeSmsgFeatureSystemStatusGlueScreen, _probeFeatureSystemStatusGlueScreenPayload)
+                        ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgFeatureSystemStatusGlueScreen, _probeFeatureSystemStatusGlueScreenPayload)
                         : BuildRetailFeatureSystemStatusGlueScreenFrame(_probeFeatureSystemStatusGlueScreenTrinitySemantics);
                     bootstrapBuffer.Write(features);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgFeatureSystemStatusGlueScreen:X8}");
 
                     byte[] mirrorVars = _probeMirrorVarsPayload.Length > 0
-                        ? BuildRetailWorldFrame(RetailOpcodeSmsgMirrorVars, _probeMirrorVarsPayload)
+                        ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgMirrorVars, _probeMirrorVarsPayload)
                         : BuildRetailMirrorVarsFrame();
                     bootstrapBuffer.Write(mirrorVars);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgMirrorVars:X8}");
 
                     byte[] cacheVersion = _probeCacheVersionPayload.Length > 0
-                        ? BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, _probeCacheVersionPayload)
+                        ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, _probeCacheVersionPayload)
                         : BuildRetailCacheVersionFrame(cacheVersionPayload);
                     bootstrapBuffer.Write(cacheVersion);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgCacheVersion:X8}");
 
                     byte[] availableHotfixes = _probeAvailableHotfixesPayload.Length > 0
-                        ? BuildRetailWorldFrame(RetailOpcodeSmsgAvailableHotfixes, _probeAvailableHotfixesPayload)
+                        ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAvailableHotfixes, _probeAvailableHotfixesPayload)
                         : BuildRetailAvailableHotfixesFrame(_acoreRealmId);
                     bootstrapBuffer.Write(availableHotfixes);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgAvailableHotfixes:X8}");
 
                     byte[] accountDataTimes = _probeAccountDataTimesPayload.Length > 0
-                        ? BuildRetailWorldFrame(RetailOpcodeSmsgAccountDataTimes, _probeAccountDataTimesPayload)
+                        ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAccountDataTimes, _probeAccountDataTimesPayload)
                         : BuildRetailAccountDataTimesFrame();
                     bootstrapBuffer.Write(accountDataTimes);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgAccountDataTimes:X8}");
 
                     byte[] tutorialFlags = _probeTutorialFlagsPayload.Length > 0
-                        ? BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, _probeTutorialFlagsPayload)
+                        ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, _probeTutorialFlagsPayload)
                         : BuildRetailTutorialFlagsFrame(tutorialFlagsPayload);
                     bootstrapBuffer.Write(tutorialFlags);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgTutorialFlags:X8}");
 
                     byte[] battleNetConnectionStatus = _probeBattleNetConnectionStatusPayload.Length > 0
-                        ? BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetConnectionStatus, _probeBattleNetConnectionStatusPayload)
+                        ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetConnectionStatus, _probeBattleNetConnectionStatusPayload)
                         : BuildRetailBattleNetConnectionStatusFrame(state: 1, suppressNotification: true);
                     bootstrapBuffer.Write(battleNetConnectionStatus);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgBattleNetConnectionStatus:X8}");
@@ -6154,7 +6115,7 @@ public sealed class WorldProxyListener : BackgroundService
 
             if (opcode == AcoreOpcodeSmsgPong)
             {
-                byte[] mapped = BuildRetailWorldFrame(RetailOpcodeSmsgPong, payload);
+                byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgPong, payload);
                 return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
             }
 
@@ -6171,7 +6132,7 @@ public sealed class WorldProxyListener : BackgroundService
                 bool wroteCharEnumToClient = false;
                 if (!suppressSyntheticEmptyRefresh)
                 {
-                    byte[] mapped = BuildRetailWorldFrame(RetailOpcodeSmsgEnumCharactersResult, payload);
+                    byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgEnumCharactersResult, payload);
                     if (_controlledUnlockEmptyCharEnumEnabled &&
                         TryBuildControlledUnlockEmptyCharEnumFrame(payload, out byte[] unlockedMapped))
                     {
@@ -6322,7 +6283,7 @@ public sealed class WorldProxyListener : BackgroundService
 
             if (opcode == AcoreOpcodeSmsgTimeSyncRequest)
             {
-                byte[] mapped = BuildRetailWorldFrame(RetailOpcodeSmsgTimeSyncRequest, payload);
+                byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgTimeSyncRequest, payload);
                 return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
             }
 
@@ -6330,7 +6291,7 @@ public sealed class WorldProxyListener : BackgroundService
             {
                 if (_forwardAcoreWardenAsRetailWarden3Data)
                 {
-                    byte[] mapped = BuildRetailWorldFrame(RetailOpcodeSmsgWarden3Data, payload);
+                    byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgWarden3Data, payload);
                     return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
                 }
 
@@ -6348,7 +6309,7 @@ public sealed class WorldProxyListener : BackgroundService
             {
                 if (_forwardAcoreAddonInfoAsRetailAddonListRequest)
                 {
-                    byte[] mapped = BuildRetailWorldFrame(RetailOpcodeSmsgAddonListRequest, payload);
+                    byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAddonListRequest, payload);
                     return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
                 }
 
@@ -6363,7 +6324,7 @@ public sealed class WorldProxyListener : BackgroundService
 
             if (opcode == AcoreOpcodeSmsgClientCacheVersion)
             {
-                byte[] mapped = BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, payload);
+                byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, payload);
                 return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
             }
 
@@ -6371,7 +6332,7 @@ public sealed class WorldProxyListener : BackgroundService
             {
                 if (_forwardAcoreTutorialFlagsAsRetailTutorialFlags)
                 {
-                    byte[] mapped = BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, payload);
+                    byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, payload);
                     return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
                 }
 
@@ -7384,6 +7345,7 @@ public sealed class WorldProxyListener : BackgroundService
         return IPAddress.Parse(address);
     }
 }
+
 
 
 
