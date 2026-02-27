@@ -224,10 +224,10 @@ public sealed class WorldProxyListener : BackgroundService
         _probeAuthResponseReplayPatchTopVirtualRealmAddressToRuntimeRealm = _options.ProbeAuthResponseReplayPatchTopVirtualRealmAddressToRuntimeRealm;
         _probeAuthResponseReplayBisectionResultOnlyErrorOk = _options.ProbeAuthResponseReplayBisectionResultOnlyErrorOk;
         _ackPolicyMode = AckPolicyResolver.Parse(_protocolOptions.AckPolicy);
-        _bootstrapFlushTriggerMode = ParseBootstrapFlushTriggerMode(
+        _bootstrapFlushTriggerMode = WorldProxyConfigParsers.ParseBootstrapFlushTriggerMode(
             _options.BootstrapFlushTriggerSource,
             out _bootstrapFlushTriggerModeValid);
-        _enterEncryptedModeOpcodeValid = TryParseFlexibleUInt32(_options.EnterEncryptedModeOpcode, out _enterEncryptedModeOpcode);
+        _enterEncryptedModeOpcodeValid = WorldProxyConfigParsers.TryParseFlexibleUInt32(_options.EnterEncryptedModeOpcode, out _enterEncryptedModeOpcode);
         _probeAuthResponseOpcode = RetailOpcodeSmsgAuthResponse;
         if (!_enterEncryptedModeOpcodeValid)
         {
@@ -237,7 +237,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeAuthResponseOpcodeOverride))
         {
             _probeAuthResponseOpcodeOverrideProvided = true;
-            _probeAuthResponseOpcodeOverrideValid = TryParseFlexibleUInt32(
+            _probeAuthResponseOpcodeOverrideValid = WorldProxyConfigParsers.TryParseFlexibleUInt32(
                 _options.ProbeAuthResponseOpcodeOverride,
                 out uint parsedAuthOpcode);
             if (_probeAuthResponseOpcodeOverrideValid)
@@ -261,7 +261,7 @@ public sealed class WorldProxyListener : BackgroundService
         if (!string.IsNullOrWhiteSpace(_options.ProbeDropDeferredOpcode))
         {
             _probeDropDeferredOpcodeConfigProvided = true;
-            if (!TryParseProbeDropDeferredOpcodes(
+            if (!WorldProxyConfigParsers.TryParseProbeDropDeferredOpcodes(
                     _options.ProbeDropDeferredOpcode,
                     _probeDropDeferredOpcodes,
                     out string? parseError))
@@ -493,7 +493,7 @@ public sealed class WorldProxyListener : BackgroundService
     {
         ValidateProtocolExperimentContractOrThrow();
 
-        IPAddress bindAddress = ParseBindAddress(_options.ListenAddress);
+        IPAddress bindAddress = WorldProxyConfigParsers.ParseBindAddress(_options.ListenAddress);
         bool resolvedAckGate = ResolveEffectiveAckGate(out string ackGateSource);
         _listener = new TcpListener(bindAddress, _options.ListenPort);
         _listener.Server.NoDelay = true;
@@ -1198,7 +1198,7 @@ public sealed class WorldProxyListener : BackgroundService
         using (downstreamClient)
         {
             string downstreamRemote = downstreamClient.Client.RemoteEndPoint?.ToString() ?? "unknown";
-            string downstreamKey = ResolveDownstreamKey(downstreamClient.Client.RemoteEndPoint, downstreamRemote);
+            string downstreamKey = WorldProxyRuntimeHelpers.ResolveDownstreamKey(downstreamClient.Client.RemoteEndPoint, downstreamRemote);
             downstreamClient.NoDelay = true;
             DateTimeOffset connectionOpenedAt = DateTimeOffset.UtcNow;
 
@@ -1381,10 +1381,10 @@ public sealed class WorldProxyListener : BackgroundService
             }
             finally
             {
-                await CompletePipeSafelyAsync(downstreamReader).ConfigureAwait(false);
-                await CompletePipeSafelyAsync(downstreamWriter).ConfigureAwait(false);
-                await CompletePipeSafelyAsync(upstreamReader).ConfigureAwait(false);
-                await CompletePipeSafelyAsync(upstreamWriter).ConfigureAwait(false);
+                await WorldProxyRuntimeHelpers.CompletePipeSafelyAsync(downstreamReader).ConfigureAwait(false);
+                await WorldProxyRuntimeHelpers.CompletePipeSafelyAsync(downstreamWriter).ConfigureAwait(false);
+                await WorldProxyRuntimeHelpers.CompletePipeSafelyAsync(upstreamReader).ConfigureAwait(false);
+                await WorldProxyRuntimeHelpers.CompletePipeSafelyAsync(upstreamWriter).ConfigureAwait(false);
             }
 
             _logger.LogInformation(
@@ -1430,16 +1430,6 @@ public sealed class WorldProxyListener : BackgroundService
                 }
             }
         }
-    }
-
-    private static string ResolveDownstreamKey(EndPoint? remoteEndPoint, string fallbackRemote)
-    {
-        if (remoteEndPoint is IPEndPoint ipEndpoint)
-        {
-            return ipEndpoint.Address.ToString();
-        }
-
-        return string.IsNullOrWhiteSpace(fallbackRemote) ? "unknown" : fallbackRemote;
     }
 
     private bool TryGetReconnectCooldownRemainingMs(string downstreamKey, out int remainingMs)
@@ -2770,7 +2760,7 @@ public sealed class WorldProxyListener : BackgroundService
             try
             {
                 Memory<byte> clientInit = rented.AsMemory(0, ClientConnectionInitializer.Length);
-                bool ok = await TryReadExactAsync(downstreamStream, clientInit, initCts.Token).ConfigureAwait(false);
+                bool ok = await WorldProxyRuntimeHelpers.TryReadExactAsync(downstreamStream, clientInit, initCts.Token).ConfigureAwait(false);
                 if (!ok)
                 {
                     _logger.LogWarning(
@@ -2825,26 +2815,6 @@ public sealed class WorldProxyListener : BackgroundService
                 connectionId);
             return false;
         }
-    }
-
-    private static async ValueTask<bool> TryReadExactAsync(
-        NetworkStream stream,
-        Memory<byte> destination,
-        CancellationToken cancellationToken)
-    {
-        int offset = 0;
-        while (offset < destination.Length)
-        {
-            int read = await stream.ReadAsync(destination[offset..], cancellationToken).ConfigureAwait(false);
-            if (read <= 0)
-            {
-                return false;
-            }
-
-            offset += read;
-        }
-
-        return true;
     }
 
     private async ValueTask<AcoreAuthSessionBridgeResult?> TryBuildAcoreAuthSessionFrameAsync(
@@ -2992,36 +2962,11 @@ public sealed class WorldProxyListener : BackgroundService
         return (0, "none");
     }
 
-    private static async ValueTask CompletePipeSafelyAsync(PipeReader reader)
-    {
-        try
-        {
-            await reader.CompleteAsync().ConfigureAwait(false);
-        }
-        catch
-        {
-            // Ignore complete errors during teardown.
-        }
-    }
-
-    private static async ValueTask CompletePipeSafelyAsync(PipeWriter writer)
-    {
-        try
-        {
-            await writer.CompleteAsync().ConfigureAwait(false);
-        }
-        catch
-        {
-            // Ignore complete errors during teardown.
-        }
-    }
-
     private sealed class RetailPostAuthClientTranslator
     {
         private const int RetailOuterHeaderBytes = 16;
         private const int RetailHeaderBytes = 20;
         private const int MaxRetailFrameBytes = 4 * 1024 * 1024;
-        private const int MaxDbQueryBulkRecords = 4096;
 
         private readonly AuthCrypt _authCrypt;
         private readonly WorldProxyBridgeState _bridgeState;
@@ -3244,7 +3189,7 @@ public sealed class WorldProxyListener : BackgroundService
 
             if (opcode == RetailOpcodeCmsgDbQueryBulk)
             {
-                if (TryParseRetailDbQueryBulk(payload, out ParsedDbQueryBulk query, out _))
+                if (RetailGlueRequestParsers.TryParseDbQueryBulk(payload, out ParsedDbQueryBulk query, out _))
                 {
                     _bridgeState.EnqueuePendingDbQueryBulkReplies(query.TableHash, query.RecordIds);
                 }
@@ -3270,7 +3215,7 @@ public sealed class WorldProxyListener : BackgroundService
 
             if (opcode == RetailOpcodeCmsgBattlenetRequest)
             {
-                if (TryParseRetailBattlenetRequest(payload, out ParsedBattlenetRequest request, out _))
+                if (RetailGlueRequestParsers.TryParseBattlenetRequest(payload, out ParsedBattlenetRequest request, out _))
                 {
                     _bridgeState.EnqueuePendingBattleNetResponse(
                         request.MethodType,
@@ -3404,111 +3349,6 @@ public sealed class WorldProxyListener : BackgroundService
             return forwarded;
         }
 
-        private static bool TryParseRetailDbQueryBulk(
-            ReadOnlySpan<byte> payload,
-            out ParsedDbQueryBulk query,
-            out string? error)
-        {
-            query = default;
-            error = null;
-
-            if (payload.Length < 6)
-            {
-                error = $"DB_QUERY_BULK payload too short: {payload.Length}.";
-                return false;
-            }
-
-            uint tableHash = BinaryPrimitives.ReadUInt32LittleEndian(payload[..4]);
-            ReadOnlySpan<byte> packed = payload[4..];
-            int bitOffset = 0;
-            if (!TryReadBitsMsbFirst(packed, ref bitOffset, 13, out ulong queryCountRaw))
-            {
-                error = "Failed to read DB_QUERY_BULK query count.";
-                return false;
-            }
-
-            if (queryCountRaw > MaxDbQueryBulkRecords)
-            {
-                error = $"DB_QUERY_BULK query count is out of range: {queryCountRaw}.";
-                return false;
-            }
-
-            int queryCount = (int)queryCountRaw;
-            int byteOffset = (bitOffset + 7) / 8;
-            int bytesNeeded = checked(queryCount * sizeof(int));
-            if (packed.Length - byteOffset < bytesNeeded)
-            {
-                error = $"DB_QUERY_BULK payload truncated. QueryCount={queryCount}, Available={packed.Length - byteOffset}, Needed={bytesNeeded}.";
-                return false;
-            }
-
-            int[] recordIds = GC.AllocateUninitializedArray<int>(queryCount);
-            for (int i = 0; i < queryCount; i++)
-            {
-                int offset = byteOffset + (i * sizeof(int));
-                recordIds[i] = BinaryPrimitives.ReadInt32LittleEndian(packed.Slice(offset, sizeof(int)));
-            }
-
-            query = new ParsedDbQueryBulk(tableHash, recordIds);
-            return true;
-        }
-
-        private static bool TryReadBitsMsbFirst(ReadOnlySpan<byte> payload, ref int bitOffset, int bitCount, out ulong value)
-        {
-            value = 0;
-            if (bitCount < 0 || bitCount > 64)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < bitCount; i++)
-            {
-                int absoluteBit = bitOffset + i;
-                int byteIndex = absoluteBit / 8;
-                if (byteIndex >= payload.Length)
-                {
-                    return false;
-                }
-
-                int bitIndexInByte = 7 - (absoluteBit % 8);
-                int bit = (payload[byteIndex] >> bitIndexInByte) & 1;
-                value = (value << 1) | (uint)bit;
-            }
-
-            bitOffset += bitCount;
-            return true;
-        }
-
-        private static bool TryParseRetailBattlenetRequest(
-            ReadOnlySpan<byte> payload,
-            out ParsedBattlenetRequest request,
-            out string? error)
-        {
-            request = default;
-            error = null;
-
-            if (payload.Length < 24)
-            {
-                error = $"CMSG_BATTLENET_REQUEST payload too short: {payload.Length}.";
-                return false;
-            }
-
-            ulong methodType = BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]);
-            ulong objectId = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(8, 8));
-            uint token = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(16, 4));
-            uint protoSize = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(20, 4));
-            if (payload.Length < 24 + protoSize)
-            {
-                error = $"CMSG_BATTLENET_REQUEST payload truncated. ProtoSize={protoSize}, PayloadBytes={payload.Length}.";
-                return false;
-            }
-
-            request = new ParsedBattlenetRequest(methodType, objectId, token);
-            return true;
-        }
-
-        private readonly record struct ParsedDbQueryBulk(uint TableHash, int[] RecordIds);
-        private readonly record struct ParsedBattlenetRequest(ulong MethodType, ulong ObjectId, uint Token);
     }
 
     private sealed class AcorePostAuthServerTranslator
@@ -5232,38 +5072,6 @@ public sealed class WorldProxyListener : BackgroundService
         private readonly record struct BufferedServerFrame(ushort Opcode, byte[] Payload);
     }
 
-    private enum BootstrapFlushTriggerMode
-    {
-        Ack = 0,
-        FirstClientPostAckNonAck = 1
-    }
-
-    private static BootstrapFlushTriggerMode ParseBootstrapFlushTriggerMode(string? value, out bool valid)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            valid = true;
-            return BootstrapFlushTriggerMode.Ack;
-        }
-
-        string normalized = value.Trim().ToLowerInvariant();
-        valid = true;
-        return normalized switch
-        {
-            "ack" => BootstrapFlushTriggerMode.Ack,
-            "first_client_post_ack_non_ack" => BootstrapFlushTriggerMode.FirstClientPostAckNonAck,
-            "first-client-post-ack-non-ack" => BootstrapFlushTriggerMode.FirstClientPostAckNonAck,
-            "firstclientpostacknonack" => BootstrapFlushTriggerMode.FirstClientPostAckNonAck,
-            _ => ParseBootstrapFlushTriggerModeInvalid(out valid)
-        };
-    }
-
-    private static BootstrapFlushTriggerMode ParseBootstrapFlushTriggerModeInvalid(out bool valid)
-    {
-        valid = false;
-        return BootstrapFlushTriggerMode.Ack;
-    }
-
     private bool ResolveEffectiveAckGate(out string source)
     {
         bool fallback = AckPolicyResolver.ResolveWaitForAckGate(
@@ -5276,7 +5084,7 @@ public sealed class WorldProxyListener : BackgroundService
             return fallback;
         }
 
-        if (TryResolveAckGateFromDecisionArtifact(
+        if (WorldProxyConfigParsers.TryResolveAckGateFromDecisionArtifact(
                 _protocolOptions.AckPolicyDecisionPath,
                 out bool gateFromArtifact,
                 out string artifactPath))
@@ -5287,159 +5095,6 @@ public sealed class WorldProxyListener : BackgroundService
 
         source = "config:WorldProxy.EnterEncryptedModeAckGateEnabled";
         return fallback;
-    }
-
-    private static bool TryResolveAckGateFromDecisionArtifact(
-        string? decisionPath,
-        out bool gate,
-        out string resolvedPath)
-    {
-        gate = false;
-        resolvedPath = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(decisionPath))
-        {
-            return false;
-        }
-
-        resolvedPath = Path.IsPathRooted(decisionPath)
-            ? decisionPath
-            : Path.Combine(WorldGatewayPathResolver.ResolveProjectRoot(), decisionPath);
-        if (!File.Exists(resolvedPath))
-        {
-            return false;
-        }
-
-        try
-        {
-            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(resolvedPath, Encoding.UTF8));
-            JsonElement root = doc.RootElement;
-
-            if (root.TryGetProperty("effective_ack_gate", out JsonElement effectiveAckElement) &&
-                (effectiveAckElement.ValueKind == JsonValueKind.True || effectiveAckElement.ValueKind == JsonValueKind.False))
-            {
-                gate = effectiveAckElement.GetBoolean();
-                return true;
-            }
-
-            if (root.TryGetProperty("recommended_ack_policy", out JsonElement recommendedPolicyElement) &&
-                recommendedPolicyElement.ValueKind == JsonValueKind.String)
-            {
-                AckPolicyMode mode = AckPolicyResolver.Parse(recommendedPolicyElement.GetString());
-                if (mode == AckPolicyMode.Gate)
-                {
-                    gate = true;
-                    return true;
-                }
-
-                if (mode == AckPolicyMode.NonBlocking)
-                {
-                    gate = false;
-                    return true;
-                }
-            }
-
-            if (root.TryGetProperty("winner", out JsonElement winnerElement) &&
-                winnerElement.ValueKind == JsonValueKind.String)
-            {
-                AckPolicyMode winnerMode = AckPolicyResolver.Parse(winnerElement.GetString());
-                if (winnerMode == AckPolicyMode.Gate)
-                {
-                    gate = true;
-                    return true;
-                }
-
-                if (winnerMode == AckPolicyMode.NonBlocking)
-                {
-                    gate = false;
-                    return true;
-                }
-            }
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-
-        return false;
-    }
-
-    private static bool TryParseFlexibleUInt32(string? value, out uint parsed)
-    {
-        parsed = 0;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        string input = value.Trim();
-        if (input.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            return uint.TryParse(input.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out parsed);
-        }
-
-        return uint.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed);
-    }
-
-    private static bool TryParseProbeDropDeferredOpcodes(string rawValue, HashSet<uint> destination, out string? error)
-    {
-        error = null;
-        destination.Clear();
-
-        string[] tokens = rawValue.Split(
-            [',', ';', '|', ' '],
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        if (tokens.Length == 0)
-        {
-            error = "empty opcode list";
-            return false;
-        }
-
-        foreach (string token in tokens)
-        {
-            if (!TryParseFlexibleUInt32(token, out uint opcode))
-            {
-                error = $"invalid opcode token '{token}'";
-                destination.Clear();
-                return false;
-            }
-
-            destination.Add(opcode);
-        }
-
-        if (destination.Count == 0)
-        {
-            error = "no valid opcode tokens";
-            return false;
-        }
-
-        return true;
-    }
-
-    private static IPAddress ParseBindAddress(string address)
-    {
-        if (string.IsNullOrWhiteSpace(address) ||
-            address == "*" ||
-            address == "0.0.0.0")
-        {
-            return IPAddress.Any;
-        }
-
-        if (address == "::" || address == "[::]")
-        {
-            return IPAddress.IPv6Any;
-        }
-
-        return IPAddress.Parse(address);
     }
 }
 
