@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.IO;
-using System.IO.Compression;
 using System.IO.Pipelines;
 using System.Linq;
 using System.Net;
@@ -12,7 +11,6 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using ICSharpCode.SharpZipLib.Zip.Compression;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -989,7 +987,7 @@ public sealed class WorldProxyListener : BackgroundService
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: compressed AUTH_RESPONSE raw-deflate level={RawDeflateLevel} (Trinity parity target: 1).",
-                NormalizeDeflateLevel(_options.ProbeCompressedAuthResponseRawDeflateLevel));
+                RetailCompressionCodec.NormalizeDeflateLevel(_options.ProbeCompressedAuthResponseRawDeflateLevel));
         }
 
         if (_options.ProbeCompressedAuthResponseChecksumPayloadOnly)
@@ -1002,7 +1000,7 @@ public sealed class WorldProxyListener : BackgroundService
         {
             _logger.LogWarning(
                 "WorldProxy probe enabled: compressed AUTH_RESPONSE checksum seed=0x{ChecksumSeed:X8}.",
-                NormalizeChecksumSeed(_options.ProbeCompressedAuthResponseChecksumSeed));
+                RetailCompressionCodec.NormalizeChecksumSeed(_options.ProbeCompressedAuthResponseChecksumSeed, TrinityCompressionAdlerSeed));
         }
 
         if (_options.ProbeCompressedAuthResponseCompressedChecksumIncludeMetadata)
@@ -3188,7 +3186,7 @@ public sealed class WorldProxyListener : BackgroundService
         }
 
         ReadOnlySpan<byte> uncompressed = plainFrame.Slice(16, checked((int)bodyLength));
-        if (!TryCompress(
+        if (!RetailCompressionCodec.TryCompress(
                 uncompressed,
                 useRawDeflate,
                 useStatefulRawDeflateSyncFlush,
@@ -3207,7 +3205,7 @@ public sealed class WorldProxyListener : BackgroundService
         ReadOnlySpan<byte> uncompressedChecksumSpan = checksumPayloadOnly && uncompressed.Length > 4
             ? uncompressed.Slice(4)
             : uncompressed;
-        uint uncompressedChecksum = ComputeAdler32(checksumSeed, uncompressedChecksumSpan);
+        uint uncompressedChecksum = RetailCompressionCodec.ComputeAdler32(checksumSeed, uncompressedChecksumSpan);
         BinaryPrimitives.WriteUInt32LittleEndian(
             payloadSpan.Slice(4, 4),
             uncompressedChecksum);
@@ -3220,11 +3218,11 @@ public sealed class WorldProxyListener : BackgroundService
             BinaryPrimitives.WriteUInt32LittleEndian(checksumSpan.Slice(0, 4), (uint)uncompressed.Length);
             BinaryPrimitives.WriteUInt32LittleEndian(checksumSpan.Slice(4, 4), uncompressedChecksum);
             compressedPayload.CopyTo(checksumSpan.Slice(8));
-            compressedChecksum = ComputeAdler32(checksumSeed, checksumSpan);
+            compressedChecksum = RetailCompressionCodec.ComputeAdler32(checksumSeed, checksumSpan);
         }
         else
         {
-            compressedChecksum = ComputeAdler32(checksumSeed, compressedPayload);
+            compressedChecksum = RetailCompressionCodec.ComputeAdler32(checksumSeed, compressedPayload);
         }
 
         BinaryPrimitives.WriteUInt32LittleEndian(
@@ -3234,240 +3232,6 @@ public sealed class WorldProxyListener : BackgroundService
 
         compressedFrame = BuildRetailWorldFrame(RetailOpcodeSmsgCompressedPacket, payloadSpan);
         return true;
-    }
-
-    private static bool TryCompress(
-        ReadOnlySpan<byte> input,
-        bool useRawDeflate,
-        bool useStatefulRawDeflateSyncFlush,
-        int rawDeflateLevel,
-        StatefulRawDeflateSyncFlushCompressor? statefulCompressor,
-        out byte[] output,
-        out string? error)
-    {
-        if (useRawDeflate && useStatefulRawDeflateSyncFlush)
-        {
-            if (statefulCompressor is null)
-            {
-                output = Array.Empty<byte>();
-                error = "Stateful raw-deflate compressor is not initialized.";
-                return false;
-            }
-
-            return statefulCompressor.TryCompressSyncFlush(input, out output, out error);
-        }
-
-        return useRawDeflate
-            ? TryCompressRawDeflate(input, rawDeflateLevel, out output, out error)
-            : TryCompressZlibWrapped(input, out output, out error);
-    }
-
-    private static bool TryCompressZlibWrapped(ReadOnlySpan<byte> input, out byte[] output, out string? error)
-    {
-        output = Array.Empty<byte>();
-        error = null;
-
-        try
-        {
-            using var stream = new MemoryStream(input.Length + 32);
-            using (var zlib = new ZLibStream(stream, CompressionLevel.Optimal, leaveOpen: true))
-            {
-                zlib.Write(input);
-                zlib.Flush();
-            }
-
-            output = stream.ToArray();
-            if (output.Length == 0)
-            {
-                error = "Zlib compression returned an empty payload.";
-                return false;
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            output = Array.Empty<byte>();
-            error = ex.Message;
-            return false;
-        }
-    }
-
-    private static bool TryCompressRawDeflate(
-        ReadOnlySpan<byte> input,
-        int rawDeflateLevel,
-        out byte[] output,
-        out string? error)
-    {
-        output = Array.Empty<byte>();
-        error = null;
-
-        try
-        {
-            using var stream = new MemoryStream(input.Length + 32);
-            var deflater = new Deflater(NormalizeDeflateLevel(rawDeflateLevel), noZlibHeaderOrFooter: true);
-            byte[] inputArray = input.ToArray();
-            deflater.SetInput(inputArray, 0, inputArray.Length);
-            deflater.Finish();
-
-            byte[] scratch = GC.AllocateUninitializedArray<byte>(8 * 1024);
-            while (!deflater.IsFinished)
-            {
-                int produced = deflater.Deflate(scratch, 0, scratch.Length);
-                if (produced <= 0)
-                {
-                    break;
-                }
-
-                stream.Write(scratch, 0, produced);
-            }
-
-            output = stream.ToArray();
-            if (output.Length == 0)
-            {
-                error = "Raw deflate compression returned an empty payload.";
-                return false;
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            output = Array.Empty<byte>();
-            error = ex.Message;
-            return false;
-        }
-    }
-
-    private sealed class StatefulRawDeflateSyncFlushCompressor : IDisposable
-    {
-        private readonly Deflater _deflater;
-        private readonly byte[] _scratch = GC.AllocateUninitializedArray<byte>(8 * 1024);
-        private bool _disposed;
-
-        public StatefulRawDeflateSyncFlushCompressor(int compressionLevel)
-        {
-            // Trinity initializes zlib with negative window bits (raw stream, no zlib header/footer).
-            _deflater = new Deflater(NormalizeDeflateLevel(compressionLevel), noZlibHeaderOrFooter: true);
-        }
-
-        public bool TryCompressSyncFlush(ReadOnlySpan<byte> input, out byte[] output, out string? error)
-        {
-            output = Array.Empty<byte>();
-            error = null;
-
-            if (_disposed)
-            {
-                error = "Stateful deflater is disposed.";
-                return false;
-            }
-
-            try
-            {
-                using var stream = new MemoryStream(input.Length + 32);
-                byte[] inputArray = input.ToArray();
-                _deflater.SetInput(inputArray, 0, inputArray.Length);
-
-                if (!DrainTo(stream, out error))
-                {
-                    return false;
-                }
-
-                _deflater.Flush();
-                if (!DrainTo(stream, out error))
-                {
-                    return false;
-                }
-
-                output = stream.ToArray();
-                if (output.Length == 0)
-                {
-                    error = "Stateful raw-deflate returned an empty payload.";
-                    return false;
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                output = Array.Empty<byte>();
-                error = ex.Message;
-                return false;
-            }
-        }
-
-        public void Dispose()
-        {
-            _disposed = true;
-        }
-
-        private bool DrainTo(MemoryStream destination, out string? error)
-        {
-            error = null;
-            int guard = 0;
-
-            while (guard < 65536)
-            {
-                int produced = _deflater.Deflate(_scratch, 0, _scratch.Length);
-                if (produced > 0)
-                {
-                    destination.Write(_scratch, 0, produced);
-                    guard = 0;
-                    continue;
-                }
-
-                if (_deflater.IsNeedingInput)
-                {
-                    return true;
-                }
-
-                guard++;
-            }
-
-            error = "Stateful raw-deflate drain exceeded guard limit.";
-            return false;
-        }
-    }
-
-    private static uint ComputeAdler32(uint seed, ReadOnlySpan<byte> data)
-    {
-        const uint ModAdler = 65521;
-        uint a = seed & 0xFFFF;
-        uint b = (seed >> 16) & 0xFFFF;
-
-        for (int i = 0; i < data.Length; i++)
-        {
-            a += data[i];
-            if (a >= ModAdler)
-            {
-                a -= ModAdler;
-            }
-
-            b += a;
-            b %= ModAdler;
-        }
-
-        return (b << 16) | a;
-    }
-
-    private static int NormalizeDeflateLevel(int configuredLevel)
-    {
-        if (configuredLevel is >= 0 and <= 9)
-        {
-            return configuredLevel;
-        }
-
-        return Deflater.DEFAULT_COMPRESSION;
-    }
-
-    private static uint NormalizeChecksumSeed(long configuredSeed)
-    {
-        if (configuredSeed is >= 0 and <= uint.MaxValue)
-        {
-            return (uint)configuredSeed;
-        }
-
-        return TrinityCompressionAdlerSeed;
     }
 
     private static bool TryValidateRetailWorldEnvelope(ReadOnlySpan<byte> frame, out string actual)
@@ -5737,9 +5501,9 @@ public sealed class WorldProxyListener : BackgroundService
             _probeCompressedAuthResponseForceEnvelope = probeCompressedAuthResponseForceEnvelope;
             _probeCompressedAuthResponseUseRawDeflate = probeCompressedAuthResponseUseRawDeflate;
             _probeCompressedAuthResponseUseStatefulDeflateSyncFlush = probeCompressedAuthResponseUseStatefulDeflateSyncFlush;
-            _probeCompressedAuthResponseRawDeflateLevel = NormalizeDeflateLevel(probeCompressedAuthResponseRawDeflateLevel);
+            _probeCompressedAuthResponseRawDeflateLevel = RetailCompressionCodec.NormalizeDeflateLevel(probeCompressedAuthResponseRawDeflateLevel);
             _probeCompressedAuthResponseChecksumPayloadOnly = probeCompressedAuthResponseChecksumPayloadOnly;
-            _probeCompressedAuthResponseChecksumSeed = NormalizeChecksumSeed(probeCompressedAuthResponseChecksumSeed);
+            _probeCompressedAuthResponseChecksumSeed = RetailCompressionCodec.NormalizeChecksumSeed(probeCompressedAuthResponseChecksumSeed, TrinityCompressionAdlerSeed);
             _probeCompressedAuthResponseCompressedChecksumIncludeMetadata = probeCompressedAuthResponseCompressedChecksumIncludeMetadata;
             _probeRetailSequencePreludePayload = probeRetailSequencePreludePayload is { Length: 4 }
                 ? probeRetailSequencePreludePayload.ToArray()
