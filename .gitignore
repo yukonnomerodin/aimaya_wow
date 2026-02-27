@@ -1,2 +1,7 @@
+README.md
 docs/
+docs/**
+docs/architecture/**
+docs/handshake/**
 artifacts/
+scripts/
