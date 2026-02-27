@@ -48,28 +48,9 @@ public sealed partial class WorldProxyListener
                     return false;
                 }
 
-                if (_probeCompressAuthResponseAsSmsgCompressedPacket && !authResponseAlreadyCompressed)
+                if (!TryApplyAuthResponseCompressionIfNeeded(mapped, authResponseAlreadyCompressed, out mapped, out error))
                 {
-                    if (!RetailCompressedPacketWrapper.TryBuildRetailCompressedPacketFrame(
-                            mapped,
-                            _probeCompressedAuthResponseForceEnvelope,
-                            _probeCompressedAuthResponseUseRawDeflate,
-                            _probeCompressedAuthResponseUseStatefulDeflateSyncFlush,
-                            _probeCompressedAuthResponseRawDeflateLevel,
-                            _probeCompressedAuthResponseChecksumPayloadOnly,
-                            _probeCompressedAuthResponseChecksumSeed,
-                            _probeCompressedAuthResponseCompressedChecksumIncludeMetadata,
-                            _statefulCompressedAuthResponseCompressor,
-                            RetailOpcodeSmsgCompressedPacket,
-                            TrinityCompressionThresholdBytes,
-                            out byte[] compressedAuthResponse,
-                            out string? compressionError))
-                    {
-                        error = $"Failed to wrap AUTH_RESPONSE as SMSG_COMPRESSED_PACKET: {compressionError ?? "<unknown>"}";
-                        return false;
-                    }
-
-                    mapped = compressedAuthResponse;
+                    return false;
                 }
 
                 return TryStageAndFlushAuthBootstrap(mapped, output, ref bytesWritten, out error);
