@@ -3040,7 +3040,12 @@ public sealed class WorldProxyListener : BackgroundService
 
             AcoreSessionMaterial account = material.Value;
             RetailAuthSessionFrame effectiveRetailFrame = retailFrame with { AccountId = accountId };
-            DbParityGateResult dbGateResult = EvaluateDbParityGate(effectiveRetailFrame, account);
+            DbParityGateResult dbGateResult = DbParityGateEvaluator.Evaluate(
+                effectiveRetailFrame,
+                account,
+                AcoreSessionKeyBytes,
+                _options.AcoreRealmId,
+                _options.AcoreClientBuild);
             bridgeState.MarkTemporalInvariant(
                 name: "db_parity_gate",
                 passed: dbGateResult.Passed,
@@ -3092,89 +3097,6 @@ public sealed class WorldProxyListener : BackgroundService
                 actual: ex.GetType().Name);
             return null;
         }
-    }
-
-    private DbParityGateResult EvaluateDbParityGate(RetailAuthSessionFrame retailFrame, AcoreSessionMaterial account)
-    {
-        const string expected = "account/session/build flags are valid before AUTH_SESSION protocol rewrite";
-
-        if (retailFrame.AccountId <= 0)
-        {
-            return new DbParityGateResult(
-                Passed: false,
-                FailureReason: "missing_account_id",
-                Expected: expected,
-                Actual: "retail accountId <= 0");
-        }
-
-        if (retailFrame.AccountId != account.AccountId)
-        {
-            return new DbParityGateResult(
-                Passed: false,
-                FailureReason: "account_binding_mismatch",
-                Expected: expected,
-                Actual: $"retail accountId={retailFrame.AccountId}, db accountId={account.AccountId}");
-        }
-
-        if (string.IsNullOrWhiteSpace(account.AccountName))
-        {
-            return new DbParityGateResult(
-                Passed: false,
-                FailureReason: "empty_account_name",
-                Expected: expected,
-                Actual: "db username is empty");
-        }
-
-        if (account.SessionKey.Length != AcoreSessionKeyBytes)
-        {
-            return new DbParityGateResult(
-                Passed: false,
-                FailureReason: "session_key_length_mismatch",
-                Expected: expected,
-                Actual: $"session_key bytes={account.SessionKey.Length}, required={AcoreSessionKeyBytes}");
-        }
-
-        if (account.Locked)
-        {
-            return new DbParityGateResult(
-                Passed: false,
-                FailureReason: "account_locked",
-                Expected: expected,
-                Actual: "db account.locked=1");
-        }
-
-        if (account.Expansion < 2)
-        {
-            return new DbParityGateResult(
-                Passed: false,
-                FailureReason: "expansion_flag_too_low",
-                Expected: expected,
-                Actual: $"db expansion={account.Expansion}, required>=2 for 3.3.5a");
-        }
-
-        if (_options.AcoreRealmId == 0)
-        {
-            return new DbParityGateResult(
-                Passed: false,
-                FailureReason: "invalid_realm_id",
-                Expected: expected,
-                Actual: "AcoreRealmId=0");
-        }
-
-        if (_options.AcoreClientBuild <= 0)
-        {
-            return new DbParityGateResult(
-                Passed: false,
-                FailureReason: "invalid_acore_client_build",
-                Expected: expected,
-                Actual: $"AcoreClientBuild={_options.AcoreClientBuild}");
-        }
-
-        return new DbParityGateResult(
-            Passed: true,
-            FailureReason: "none",
-            Expected: expected,
-            Actual: $"ok: accountId={account.AccountId}, expansion={account.Expansion}, locked={account.Locked}, acore_build={_options.AcoreClientBuild}");
     }
 
     private async ValueTask<(int AccountId, string Source)> ResolveMissingRetailAccountIdAsync(CancellationToken cancellationToken)
