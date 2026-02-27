@@ -3069,161 +3069,6 @@ public sealed class WorldProxyListener : BackgroundService
         return (0, "none");
     }
 
-    private static byte[] BuildRetailEmptyEnumCharactersResultFrame()
-    {
-        // Trinity 12.x EnumCharactersResult layout for empty list.
-        // Controlled unlock variant uses permissive unlock metadata to keep character creation UI enabled.
-        // This path is used only for AC empty char-list payloads under explicit config flag.
-        var payload = new BitPackedBufferWriter(initialCapacity: 320);
-        ReadOnlySpan<byte> unlockedRaces =
-        [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
-            22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 34, 35, 36, 37
-        ];
-
-        payload.WriteBit(true);  // Success
-        payload.WriteBit(false); // Realmless
-        payload.WriteBit(false); // IsDeletedCharacters
-        payload.WriteBit(true);  // IgnoreNewPlayerRestrictions
-        payload.WriteBit(false); // IsRestrictedNewPlayer
-        payload.WriteBit(true);  // IsNewcomerChatCompleted
-        payload.WriteBit(false); // IsRestrictedTrial
-        payload.WriteBit(false); // IsAccountLapsedPlayer
-        payload.WriteBit(true);  // ClassDisableMask present (Trinity initializes Optional<uint32>)
-        payload.WriteBit(false); // ForceCharacterListSort
-        payload.FlushBits();
-
-        payload.WriteUInt32LE(0); // Characters size
-        payload.WriteUInt32LE(0); // RegionwideCharacters size
-        payload.WriteInt32LE(80); // MaxCharacterLevel
-        payload.WriteUInt32LE((uint)unlockedRaces.Length); // RaceUnlockData size
-        payload.WriteUInt32LE(0); // UnlockedConditionalAppearances size
-        payload.WriteUInt32LE(0); // RaceLimitDisables size
-        payload.WriteUInt32LE(0); // WarbandGroups size
-        payload.WriteUInt32LE(0); // ClassDisableMask value
-
-        for (int i = 0; i < unlockedRaces.Length; i++)
-        {
-            payload.WriteByte(unlockedRaces[i]); // RaceID
-            payload.WriteUInt32LE(1); // ClassUnlocks size
-            payload.WriteBit(true);   // HasUnlockedLicense
-            payload.WriteBit(true);   // HasUnlockedAchievement
-            payload.WriteBit(false);  // HasHeritageArmorUnlockAchievement
-            payload.WriteBit(false);  // HideRaceOnClient
-            payload.WriteBit(false);  // FactionBalanceDisabled
-            payload.FlushBits();
-
-            payload.WriteByte(1);     // ClassID (Warrior)
-            payload.WriteUInt32LE(0); // AchievementID
-            payload.WriteBit(true);   // HasUnlockedAchievement
-            payload.FlushBits();
-        }
-
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgEnumCharactersResult, payload.WrittenSpan);
-    }
-
-    private static byte[] BuildRetailMirrorVarsFrame()
-    {
-        return RetailGluePayloadBuilders.BuildMirrorVarsFrame(RetailOpcodeSmsgMirrorVars);
-    }
-
-    private static byte[] BuildRetailCacheVersionFrame(byte[]? acoreCacheVersionPayload)
-    {
-        return RetailGluePayloadBuilders.BuildCacheVersionFrame(RetailOpcodeSmsgCacheVersion, acoreCacheVersionPayload);
-    }
-
-    private static byte[] BuildRetailAvailableHotfixesFrame(uint acoreRealmId)
-    {
-        return RetailGluePayloadBuilders.BuildAvailableHotfixesFrame(RetailOpcodeSmsgAvailableHotfixes, acoreRealmId);
-    }
-
-    private static byte[] BuildRetailAccountDataTimesFrame()
-    {
-        return RetailGluePayloadBuilders.BuildAccountDataTimesFrame(RetailOpcodeSmsgAccountDataTimes, RetailAccountDataTimesCount);
-    }
-
-    private static byte[] BuildRetailTutorialFlagsFrame(byte[]? acoreTutorialFlagsPayload)
-    {
-        return RetailGluePayloadBuilders.BuildTutorialFlagsFrame(
-            RetailOpcodeSmsgTutorialFlags,
-            acoreTutorialFlagsPayload,
-            RetailTutorialValuesCount * sizeof(uint));
-    }
-
-    private static byte[] BuildRetailBattleNetConnectionStatusFrame(byte state, bool suppressNotification)
-    {
-        return RetailGluePayloadBuilders.BuildBattleNetConnectionStatusFrame(
-            RetailOpcodeSmsgBattleNetConnectionStatus,
-            state,
-            suppressNotification);
-    }
-
-    private static byte[] BuildRetailAccountItemCollectionDataFrame()
-    {
-        return RetailGluePayloadBuilders.BuildAccountItemCollectionDataFrame(RetailOpcodeSmsgAccountItemCollectionData);
-    }
-
-    private static byte[] BuildRetailSocialContractRequestResponseFrame(bool showSocialContract)
-    {
-        return RetailGluePayloadBuilders.BuildSocialContractRequestResponseFrame(
-            RetailOpcodeSmsgSocialContractRequestResponse,
-            showSocialContract);
-    }
-
-    private static byte[] BuildRetailUndeleteCooldownStatusResponseFrame(
-        uint maxCooldownSeconds,
-        uint currentCooldownSeconds,
-        bool onCooldown)
-    {
-        return RetailGluePayloadBuilders.BuildUndeleteCooldownStatusResponseFrame(
-            RetailOpcodeSmsgUndeleteCooldownStatusResponse,
-            maxCooldownSeconds,
-            currentCooldownSeconds,
-            onCooldown);
-    }
-
-    private static byte[] BuildRetailDbReplyFrame(
-        uint tableHash,
-        int recordId,
-        uint timestamp,
-        byte status,
-        ReadOnlySpan<byte> data)
-    {
-        return RetailGluePayloadBuilders.BuildDbReplyFrame(
-            RetailOpcodeSmsgDbReply,
-            tableHash,
-            recordId,
-            timestamp,
-            status,
-            data);
-    }
-
-    private static byte[] BuildRetailBattleNetResponseFrame(
-        ulong methodType,
-        ulong objectId,
-        uint token,
-        uint statusCode,
-        ReadOnlySpan<byte> data)
-    {
-        return RetailGluePayloadBuilders.BuildBattleNetResponseFrame(
-            RetailOpcodeSmsgBattleNetResponse,
-            methodType,
-            objectId,
-            token,
-            statusCode,
-            data);
-    }
-
-    private static byte[] BuildRetailServerTimeOffsetFrame(long unixTimeSeconds)
-    {
-        return RetailGluePayloadBuilders.BuildServerTimeOffsetFrame(RetailOpcodeSmsgServerTimeOffset, unixTimeSeconds);
-    }
-
-    private static byte[] BuildRetailHotfixConnectFrame()
-    {
-        return RetailGluePayloadBuilders.BuildHotfixConnectFrame(RetailOpcodeSmsgHotfixConnect);
-    }
-
     private static bool TryDecodeAzerothAuthChallenge(ReadOnlySequence<byte> buffer, out AcoreAuthChallengeDump dump)
     {
         dump = default;
@@ -4402,37 +4247,43 @@ public sealed class WorldProxyListener : BackgroundService
 
                     byte[] mirrorVars = _probeMirrorVarsPayload.Length > 0
                         ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgMirrorVars, _probeMirrorVarsPayload)
-                        : BuildRetailMirrorVarsFrame();
+                        : RetailGluePayloadBuilders.BuildMirrorVarsFrame(RetailOpcodeSmsgMirrorVars);
                     bootstrapBuffer.Write(mirrorVars);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgMirrorVars:X8}");
 
                     byte[] cacheVersion = _probeCacheVersionPayload.Length > 0
                         ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, _probeCacheVersionPayload)
-                        : BuildRetailCacheVersionFrame(cacheVersionPayload);
+                        : RetailGluePayloadBuilders.BuildCacheVersionFrame(RetailOpcodeSmsgCacheVersion, cacheVersionPayload);
                     bootstrapBuffer.Write(cacheVersion);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgCacheVersion:X8}");
 
                     byte[] availableHotfixes = _probeAvailableHotfixesPayload.Length > 0
                         ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAvailableHotfixes, _probeAvailableHotfixesPayload)
-                        : BuildRetailAvailableHotfixesFrame(_acoreRealmId);
+                        : RetailGluePayloadBuilders.BuildAvailableHotfixesFrame(RetailOpcodeSmsgAvailableHotfixes, _acoreRealmId);
                     bootstrapBuffer.Write(availableHotfixes);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgAvailableHotfixes:X8}");
 
                     byte[] accountDataTimes = _probeAccountDataTimesPayload.Length > 0
                         ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAccountDataTimes, _probeAccountDataTimesPayload)
-                        : BuildRetailAccountDataTimesFrame();
+                        : RetailGluePayloadBuilders.BuildAccountDataTimesFrame(RetailOpcodeSmsgAccountDataTimes, RetailAccountDataTimesCount);
                     bootstrapBuffer.Write(accountDataTimes);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgAccountDataTimes:X8}");
 
                     byte[] tutorialFlags = _probeTutorialFlagsPayload.Length > 0
                         ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, _probeTutorialFlagsPayload)
-                        : BuildRetailTutorialFlagsFrame(tutorialFlagsPayload);
+                        : RetailGluePayloadBuilders.BuildTutorialFlagsFrame(
+                            RetailOpcodeSmsgTutorialFlags,
+                            tutorialFlagsPayload,
+                            RetailTutorialValuesCount * sizeof(uint));
                     bootstrapBuffer.Write(tutorialFlags);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgTutorialFlags:X8}");
 
                     byte[] battleNetConnectionStatus = _probeBattleNetConnectionStatusPayload.Length > 0
                         ? RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgBattleNetConnectionStatus, _probeBattleNetConnectionStatusPayload)
-                        : BuildRetailBattleNetConnectionStatusFrame(state: 1, suppressNotification: true);
+                        : RetailGluePayloadBuilders.BuildBattleNetConnectionStatusFrame(
+                            RetailOpcodeSmsgBattleNetConnectionStatus,
+                            state: 1,
+                            suppressNotification: true);
                     bootstrapBuffer.Write(battleNetConnectionStatus);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgBattleNetConnectionStatus:X8}");
                 }
@@ -4637,7 +4488,7 @@ public sealed class WorldProxyListener : BackgroundService
                     _onCharEnumReceived?.Invoke();
 
                     if (!TryWriteRetailServerFrame(
-                            BuildRetailAccountItemCollectionDataFrame(),
+                            RetailGluePayloadBuilders.BuildAccountItemCollectionDataFrame(RetailOpcodeSmsgAccountItemCollectionData),
                             output,
                             out long accountCollectionBytes,
                             out string? accountCollectionError))
@@ -4660,7 +4511,9 @@ public sealed class WorldProxyListener : BackgroundService
                     if (shouldSendSocialContractResponse)
                     {
                         if (!TryWriteRetailServerFrame(
-                                BuildRetailSocialContractRequestResponseFrame(showSocialContract: false),
+                                RetailGluePayloadBuilders.BuildSocialContractRequestResponseFrame(
+                                    RetailOpcodeSmsgSocialContractRequestResponse,
+                                    showSocialContract: false),
                                 output,
                                 out long socialBytes,
                                 out string? socialError))
@@ -4675,7 +4528,8 @@ public sealed class WorldProxyListener : BackgroundService
                     if (shouldSendUndeleteCooldownStatusResponse)
                     {
                         if (!TryWriteRetailServerFrame(
-                                BuildRetailUndeleteCooldownStatusResponseFrame(
+                                RetailGluePayloadBuilders.BuildUndeleteCooldownStatusResponseFrame(
+                                    RetailOpcodeSmsgUndeleteCooldownStatusResponse,
                                     maxCooldownSeconds: 0u,
                                     currentCooldownSeconds: 0u,
                                     onCooldown: false),
@@ -4693,7 +4547,7 @@ public sealed class WorldProxyListener : BackgroundService
                     if (shouldSendHotfixConnect)
                     {
                         if (!TryWriteRetailServerFrame(
-                                BuildRetailHotfixConnectFrame(),
+                                RetailGluePayloadBuilders.BuildHotfixConnectFrame(RetailOpcodeSmsgHotfixConnect),
                                 output,
                                 out long hotfixBytes,
                                 out string? hotfixError))
@@ -4708,7 +4562,8 @@ public sealed class WorldProxyListener : BackgroundService
                     while (_bridgeState.TryDequeuePendingBattleNetResponse(out ulong methodType, out ulong objectId, out uint token))
                     {
                         if (!TryWriteRetailServerFrame(
-                                BuildRetailBattleNetResponseFrame(
+                                RetailGluePayloadBuilders.BuildBattleNetResponseFrame(
+                                    RetailOpcodeSmsgBattleNetResponse,
                                     methodType: methodType,
                                     objectId: objectId,
                                     token: token,
@@ -4728,7 +4583,9 @@ public sealed class WorldProxyListener : BackgroundService
                     if (shouldSendServerTimeOffset)
                     {
                         if (!TryWriteRetailServerFrame(
-                                BuildRetailServerTimeOffsetFrame(DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
+                                RetailGluePayloadBuilders.BuildServerTimeOffsetFrame(
+                                    RetailOpcodeSmsgServerTimeOffset,
+                                    DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
                                 output,
                                 out long serverTimeBytes,
                                 out string? serverTimeError))
@@ -4746,7 +4603,8 @@ public sealed class WorldProxyListener : BackgroundService
                         for (int i = 0; i < recordIds.Length; i++)
                         {
                             if (!TryWriteRetailServerFrame(
-                                    BuildRetailDbReplyFrame(
+                                    RetailGluePayloadBuilders.BuildDbReplyFrame(
+                                        RetailOpcodeSmsgDbReply,
                                         tableHash: tableHash,
                                         recordId: recordIds[i],
                                         timestamp: dbReplyTimestamp,
@@ -4853,7 +4711,7 @@ public sealed class WorldProxyListener : BackgroundService
                 return false;
             }
 
-            retailFrame = BuildRetailEmptyEnumCharactersResultFrame();
+            retailFrame = RetailEmptyEnumCharactersResultBuilder.BuildFrame(RetailOpcodeSmsgEnumCharactersResult);
             return true;
         }
 
