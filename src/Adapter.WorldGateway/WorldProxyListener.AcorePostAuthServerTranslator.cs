@@ -8,9 +8,6 @@ public sealed partial class WorldProxyListener
 {
     private sealed partial class AcorePostAuthServerTranslator
     {
-        private const int MaxBufferedFramesBeforeAuth = 32;
-        private const int MaxBufferedBytesBeforeAuth = 256 * 1024;
-
         private readonly AuthCrypt _authCrypt;
         private readonly WorldProxyBridgeState _bridgeState;
         private readonly bool _strictStageEnforcement;

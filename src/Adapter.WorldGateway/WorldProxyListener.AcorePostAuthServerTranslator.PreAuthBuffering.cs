@@ -8,8 +8,8 @@ public sealed partial class WorldProxyListener
     {
         private void TryBufferOrDropPreAuthFrame(ushort opcode, ReadOnlySpan<byte> payload)
         {
-            if (_bufferedBeforeAuth.Count >= MaxBufferedFramesBeforeAuth ||
-                _bufferedBeforeAuthBytes + payload.Length > MaxBufferedBytesBeforeAuth)
+            if (_bufferedBeforeAuth.Count >= WorldProxyRuntimeConstants.MaxBufferedFramesBeforeAuth ||
+                _bufferedBeforeAuthBytes + payload.Length > WorldProxyRuntimeConstants.MaxBufferedBytesBeforeAuth)
             {
                 if (_loggedDroppedOpcodes.Add(opcode))
                 {

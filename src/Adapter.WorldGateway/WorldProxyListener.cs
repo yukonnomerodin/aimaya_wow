@@ -24,7 +24,6 @@ namespace Adapter.WorldGateway;
 /// </summary>
 public sealed partial class WorldProxyListener : BackgroundService
 {
-    private const int DefaultDumpBytes = 64;
     private static readonly byte[] Sha1ZeroPrefix = [0, 0, 0, 0];
     private static readonly byte[] ServerConnectionInitializer = Encoding.ASCII.GetBytes("WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT - V2\n");
     private static readonly byte[] ClientConnectionInitializer = Encoding.ASCII.GetBytes("WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER - V2\n");

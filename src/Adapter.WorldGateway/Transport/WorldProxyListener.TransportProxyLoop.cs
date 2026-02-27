@@ -49,7 +49,9 @@ public sealed partial class WorldProxyListener
                 if (_options.EnableFirstPacketDump && !firstChunkDumped)
                 {
                     firstChunkDumped = true;
-                    int maxBytes = _options.FirstPacketDumpBytes <= 0 ? DefaultDumpBytes : _options.FirstPacketDumpBytes;
+                    int maxBytes = _options.FirstPacketDumpBytes <= 0
+                        ? WorldProxyRuntimeConstants.DefaultDumpBytes
+                        : _options.FirstPacketDumpBytes;
                     _logger.LogInformation(
                         "[WorldProxy][DUMP] ConnectionId={ConnectionId}, Direction={Direction}, Bytes={Bytes}, Head={Head}",
                         connectionId,
@@ -365,7 +367,9 @@ public sealed partial class WorldProxyListener
                         connectionId,
                         direction,
                         buffer.Length,
-                        RetailFrameCodec.ToHex(buffer, Math.Max(DefaultDumpBytes, _options.FirstPacketDumpBytes)));
+                        RetailFrameCodec.ToHex(
+                            buffer,
+                            Math.Max(WorldProxyRuntimeConstants.DefaultDumpBytes, _options.FirstPacketDumpBytes)));
                 }
 
                 if (direction == "client->world" &&
@@ -378,7 +382,9 @@ public sealed partial class WorldProxyListener
                         connectionId,
                         direction,
                         buffer.Length,
-                        RetailFrameCodec.ToHex(buffer, Math.Max(DefaultDumpBytes, _options.FirstPacketDumpBytes)));
+                        RetailFrameCodec.ToHex(
+                            buffer,
+                            Math.Max(WorldProxyRuntimeConstants.DefaultDumpBytes, _options.FirstPacketDumpBytes)));
 
                     if (RetailFrameCodec.TryDecodeRetailWorldFrame(buffer, out uint retailBodyLength, out uint retailOpcode))
                     {
