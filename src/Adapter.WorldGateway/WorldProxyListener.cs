@@ -3562,7 +3562,7 @@ public sealed class WorldProxyListener : BackgroundService
         }
 
         object sessionValue = reader.GetValue(1);
-        if (!TryExtractSessionKey(sessionValue, out string reason))
+        if (!WorldSessionMaterialParser.TryExtractSessionKey(sessionValue, AcoreSessionKeyBytes, out string reason))
         {
             _logger.LogWarning(
                 "[WorldProxy][BRIDGE] Strict session key lookup failed: session_key unusable. AccountId={AccountId}, Reason={Reason}",
@@ -3571,15 +3571,15 @@ public sealed class WorldProxyListener : BackgroundService
             return null;
         }
 
-        byte[] sessionKey = ExtractSessionKey(sessionValue);
+        byte[] sessionKey = WorldSessionMaterialParser.ExtractSessionKey(sessionValue, AcoreSessionKeyBytes);
 
         byte[]? bnetKeyData64 = null;
         if (!reader.IsDBNull(2))
         {
             object bnetValue = reader.GetValue(2);
-            if (TryExtractBnetKeyData64(bnetValue, out string bnetReason))
+            if (WorldSessionMaterialParser.TryExtractBnetKeyData64(bnetValue, out string bnetReason))
             {
-                bnetKeyData64 = ExtractBnetKeyData64(bnetValue);
+                bnetKeyData64 = WorldSessionMaterialParser.ExtractBnetKeyData64(bnetValue);
             }
             else
             {
@@ -3641,154 +3641,6 @@ public sealed class WorldProxyListener : BackgroundService
         command.CommandTimeout = 5;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         Volatile.Write(ref _worldSessionMaterialTableEnsured, 1);
-    }
-
-    private static bool TryExtractSessionKey(object value, out string reason)
-    {
-        reason = string.Empty;
-
-        if (value is DBNull)
-        {
-            reason = "NULL";
-            return false;
-        }
-
-        if (value is byte[] raw)
-        {
-            if (raw.Length >= AcoreSessionKeyBytes)
-            {
-                return true;
-            }
-
-            reason = $"byte[{raw.Length}]";
-            return false;
-        }
-
-        if (value is string s)
-        {
-            string text = s.Trim();
-            if (text.Length == AcoreSessionKeyBytes * 2 && IsHex(text))
-            {
-                return true;
-            }
-
-            reason = $"string[{text.Length}]";
-            return false;
-        }
-
-        reason = value.GetType().FullName ?? value.GetType().Name;
-        return false;
-    }
-
-    private static byte[] ExtractSessionKey(object value)
-    {
-        if (value is byte[] raw)
-        {
-            if (raw.Length == AcoreSessionKeyBytes)
-            {
-                return raw;
-            }
-
-            byte[] trimmed = GC.AllocateUninitializedArray<byte>(AcoreSessionKeyBytes);
-            raw.AsSpan(0, AcoreSessionKeyBytes).CopyTo(trimmed);
-            CryptographicOperations.ZeroMemory(raw);
-            return trimmed;
-        }
-
-        if (value is string s)
-        {
-            byte[] parsed = Convert.FromHexString(s.Trim());
-            if (parsed.Length == AcoreSessionKeyBytes)
-            {
-                return parsed;
-            }
-
-            byte[] trimmed = GC.AllocateUninitializedArray<byte>(AcoreSessionKeyBytes);
-            parsed.AsSpan(0, AcoreSessionKeyBytes).CopyTo(trimmed);
-            CryptographicOperations.ZeroMemory(parsed);
-            return trimmed;
-        }
-
-        throw new InvalidOperationException($"Unsupported session_key value type: {value.GetType().FullName}");
-    }
-
-    private static bool TryExtractBnetKeyData64(object value, out string reason)
-    {
-        reason = string.Empty;
-
-        if (value is DBNull)
-        {
-            reason = "NULL";
-            return false;
-        }
-
-        if (value is byte[] raw)
-        {
-            if (raw.Length == 64)
-            {
-                return true;
-            }
-
-            reason = $"byte[{raw.Length}]";
-            return false;
-        }
-
-        if (value is string s)
-        {
-            string text = s.Trim();
-            if (text.Length == 128 && IsHex(text))
-            {
-                return true;
-            }
-
-            reason = $"string[{text.Length}]";
-            return false;
-        }
-
-        reason = value.GetType().FullName ?? value.GetType().Name;
-        return false;
-    }
-
-    private static byte[] ExtractBnetKeyData64(object value)
-    {
-        if (value is byte[] raw)
-        {
-            if (raw.Length == 64)
-            {
-                return raw;
-            }
-
-            throw new InvalidOperationException($"Unexpected key_data byte length: {raw.Length}.");
-        }
-
-        if (value is string s)
-        {
-            byte[] parsed = Convert.FromHexString(s.Trim());
-            if (parsed.Length == 64)
-            {
-                return parsed;
-            }
-
-            throw new InvalidOperationException($"Unexpected key_data hex length: {parsed.Length} bytes.");
-        }
-
-        throw new InvalidOperationException($"Unsupported key_data value type: {value.GetType().FullName}");
-    }
-
-    private static bool IsHex(string value)
-    {
-        foreach (char c in value)
-        {
-            bool ok = (c >= '0' && c <= '9') ||
-                      (c >= 'A' && c <= 'F') ||
-                      (c >= 'a' && c <= 'f');
-            if (!ok)
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private static byte[] BuildAcoreDigest(
