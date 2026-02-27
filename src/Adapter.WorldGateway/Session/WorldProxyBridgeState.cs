@@ -8,10 +8,10 @@ namespace Adapter.WorldGateway;
 
 internal sealed class WorldProxyBridgeState
 {
-    private const uint ClientOpcodeEnterEncryptedModeAck = 0x0041_0005;
-    private const uint ClientOpcodeEnumCharacters = 0x0040_0014;
-    private const ushort ServerOpcodeAuthResponse = 0x01EE;
-    private const ushort ServerOpcodeCharEnum = 0x003B;
+    private const uint ClientOpcodeEnterEncryptedModeAck = WorldGatewayOpcodes.RetailCmsgEnterEncryptedModeAck;
+    private const uint ClientOpcodeEnumCharacters = WorldGatewayOpcodes.RetailCmsgEnumCharacters;
+    private const ushort ServerOpcodeAuthResponse = WorldGatewayOpcodes.AcoreSmsgAuthResponse;
+    private const ushort ServerOpcodeCharEnum = WorldGatewayOpcodes.AcoreSmsgCharEnum;
     private const int PreAckTraceMaxFrames = 6;
     private const int PostAckTraceMaxFrames = 9;
     private const int PostAckTraceHeadBytes = 64;
