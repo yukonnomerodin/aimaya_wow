@@ -3069,18 +3069,6 @@ public sealed class WorldProxyListener : BackgroundService
         return (0, "none");
     }
 
-    private static byte[] BuildRetailAuthSequencePreludeFrame(ReadOnlySpan<byte> payloadBytes)
-    {
-        if (payloadBytes.Length != 4)
-        {
-            throw new ArgumentOutOfRangeException(nameof(payloadBytes), "Retail prelude payload must be exactly 4 bytes.");
-        }
-
-        Span<byte> payload = stackalloc byte[4];
-        payloadBytes.CopyTo(payload);
-        return RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAuthSequencePrelude, payload);
-    }
-
     private static byte[] BuildRetailSetTimeZoneInformationFrame()
     {
         const string timezone = "Etc/UTC";
@@ -4535,7 +4523,7 @@ public sealed class WorldProxyListener : BackgroundService
 
                 if (_probeInsertRetailSequencePreludeBeforeAuthResponse)
                 {
-                    byte[] prelude = BuildRetailAuthSequencePreludeFrame(_probeRetailSequencePreludePayload);
+                    byte[] prelude = RetailAuthSequencePreludeBuilder.BuildFrame(RetailOpcodeSmsgAuthSequencePrelude, _probeRetailSequencePreludePayload);
                     bootstrapBuffer.Write(prelude);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgAuthSequencePrelude:X8}");
                 }
@@ -4546,7 +4534,7 @@ public sealed class WorldProxyListener : BackgroundService
 
                 if (_probeInsertRetailSequencePreludeAfterAuthResponse)
                 {
-                    byte[] prelude = BuildRetailAuthSequencePreludeFrame(_probeRetailSequencePreludePayload);
+                    byte[] prelude = RetailAuthSequencePreludeBuilder.BuildFrame(RetailOpcodeSmsgAuthSequencePrelude, _probeRetailSequencePreludePayload);
                     bootstrapBuffer.Write(prelude);
                     stagedOpcodes.Add($"0x{RetailOpcodeSmsgAuthSequencePrelude:X8}");
                 }
