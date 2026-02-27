@@ -494,7 +494,12 @@ public sealed class WorldProxyListener : BackgroundService
         ValidateProtocolExperimentContractOrThrow();
 
         IPAddress bindAddress = WorldProxyConfigParsers.ParseBindAddress(_options.ListenAddress);
-        bool resolvedAckGate = ResolveEffectiveAckGate(out string ackGateSource);
+        bool resolvedAckGate = AckPolicyResolver.ResolveEffectiveWaitForAckGate(
+            _ackPolicyMode,
+            _options.EnterEncryptedModeAckGateEnabled,
+            _protocolOptions.AckPolicy,
+            _protocolOptions.AckPolicyDecisionPath,
+            out string ackGateSource);
         _listener = new TcpListener(bindAddress, _options.ListenPort);
         _listener.Server.NoDelay = true;
         _listener.Start(_options.Backlog);
@@ -1207,7 +1212,11 @@ public sealed class WorldProxyListener : BackgroundService
                 connectionId,
                 downstreamRemote);
 
-            if (TryGetReconnectCooldownRemainingMs(downstreamKey, out int reconnectCooldownRemainingMs))
+            if (ReconnectCooldownHelpers.TryGetRemainingMs(
+                    _reconnectCooldownUntilByKey,
+                    _options.ReconnectCooldownMs,
+                    downstreamKey,
+                    out int reconnectCooldownRemainingMs))
             {
                 _logger.LogInformation(
                     "[WorldProxy][ANTISPAM] Reconnect blocked by cooldown. ConnectionId={ConnectionId}, DownstreamKey={DownstreamKey}, RemainingMs={RemainingMs}, CooldownMs={CooldownMs}",
@@ -1432,57 +1441,6 @@ public sealed class WorldProxyListener : BackgroundService
         }
     }
 
-    private bool TryGetReconnectCooldownRemainingMs(string downstreamKey, out int remainingMs)
-    {
-        remainingMs = 0;
-
-        int cooldownMs = _options.ReconnectCooldownMs;
-        if (cooldownMs <= 0 || string.IsNullOrWhiteSpace(downstreamKey))
-        {
-            return false;
-        }
-
-        long nowUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        if (!_reconnectCooldownUntilByKey.TryGetValue(downstreamKey, out long cooldownUntilUnixMs))
-        {
-            return false;
-        }
-
-        long deltaMs = cooldownUntilUnixMs - nowUnixMs;
-        if (deltaMs <= 0)
-        {
-            _reconnectCooldownUntilByKey.TryRemove(downstreamKey, out _);
-            return false;
-        }
-
-        remainingMs = deltaMs > int.MaxValue ? int.MaxValue : (int)deltaMs;
-        return true;
-    }
-
-    private void ArmReconnectCooldown(string downstreamKey, string source, uint? reason = null)
-    {
-        int cooldownMs = _options.ReconnectCooldownMs;
-        if (cooldownMs <= 0 || string.IsNullOrWhiteSpace(downstreamKey))
-        {
-            return;
-        }
-
-        long nowUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        long cooldownUntilUnixMs = checked(nowUnixMs + cooldownMs);
-        _reconnectCooldownUntilByKey.AddOrUpdate(
-            downstreamKey,
-            cooldownUntilUnixMs,
-            (_, existing) => Math.Max(existing, cooldownUntilUnixMs));
-
-        _logger.LogInformation(
-            "[WorldProxy][ANTISPAM] Reconnect cooldown armed. DownstreamKey={DownstreamKey}, CooldownMs={CooldownMs}, Source={Source}, Reason={Reason}, UntilUnixMs={UntilUnixMs}",
-            downstreamKey,
-            cooldownMs,
-            source,
-            reason.HasValue ? reason.Value.ToString(CultureInfo.InvariantCulture) : "<none>",
-            cooldownUntilUnixMs);
-    }
-
     private void ValidateProtocolExperimentContractOrThrow()
     {
         if (string.IsNullOrWhiteSpace(_protocolOptions.HypothesisId) ||
@@ -1525,7 +1483,12 @@ public sealed class WorldProxyListener : BackgroundService
         int acServerFramesLogged = 0;
         RetailPostAuthClientTranslator? retailPostAuthClientTranslator = null;
         AcorePostAuthServerTranslator? acorePostAuthServerTranslator = null;
-        bool waitForEnterEncryptedAckGate = ResolveEffectiveAckGate(out _);
+        bool waitForEnterEncryptedAckGate = AckPolicyResolver.ResolveEffectiveWaitForAckGate(
+            _ackPolicyMode,
+            _options.EnterEncryptedModeAckGateEnabled,
+            _protocolOptions.AckPolicy,
+            _protocolOptions.AckPolicyDecisionPath,
+            out _);
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -1586,10 +1549,21 @@ public sealed class WorldProxyListener : BackgroundService
                         onLogDisconnect: reason =>
                         {
                             bridgeState.SetLogDisconnectReason(reason);
-                            ArmReconnectCooldown(
-                                downstreamKey,
-                                source: "cmsg_log_disconnect",
-                                reason: reason);
+                            if (ReconnectCooldownHelpers.TryArm(
+                                    _reconnectCooldownUntilByKey,
+                                    _options.ReconnectCooldownMs,
+                                    downstreamKey,
+                                    out long cooldownUntilUnixMs))
+                            {
+                                _logger.LogInformation(
+                                    "[WorldProxy][ANTISPAM] Reconnect cooldown armed. DownstreamKey={DownstreamKey}, CooldownMs={CooldownMs}, Source={Source}, Reason={Reason}, UntilUnixMs={UntilUnixMs}",
+                                    downstreamKey,
+                                    _options.ReconnectCooldownMs,
+                                    "cmsg_log_disconnect",
+                                    reason.ToString(CultureInfo.InvariantCulture),
+                                    cooldownUntilUnixMs);
+                            }
+
                             bridgeState.MarkClientRequestedDisconnect();
                             _logger.LogInformation(
                                 "[WorldProxy][MAP] Retail CMSG_LOG_DISCONNECT received. ConnectionId={ConnectionId}, Reason={Reason}",
@@ -3141,11 +3115,12 @@ public sealed class WorldProxyListener : BackgroundService
                     return false;
                 }
 
-                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodePing, payload[..8]);
-                _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
-                output.Write(mapped);
-                bytesWritten = mapped.Length;
-                return true;
+                return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
+                    _authCrypt,
+                    AcoreOpcodePing,
+                    payload[..8],
+                    output,
+                    out bytesWritten);
             }
 
             if (opcode == RetailOpcodeEnterEncryptedModeAck)
@@ -3159,20 +3134,22 @@ public sealed class WorldProxyListener : BackgroundService
             if (opcode == RetailOpcodeEnumCharacters)
             {
                 _onEnumCharactersRequest?.Invoke();
-                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeCharEnum, ReadOnlySpan<byte>.Empty);
-                _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
-                output.Write(mapped);
-                bytesWritten = mapped.Length;
-                return true;
+                return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
+                    _authCrypt,
+                    AcoreOpcodeCharEnum,
+                    ReadOnlySpan<byte>.Empty,
+                    output,
+                    out bytesWritten);
             }
 
             if (opcode == RetailOpcodeWarden3Data)
             {
-                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeWardenData, payload);
-                _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
-                output.Write(mapped);
-                bytesWritten = mapped.Length;
-                return true;
+                return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
+                    _authCrypt,
+                    AcoreOpcodeWardenData,
+                    payload,
+                    output,
+                    out bytesWritten);
             }
 
             if (opcode == RetailOpcodeCmsgGetUndeleteCharacterCooldownStatus)
@@ -3255,11 +3232,12 @@ public sealed class WorldProxyListener : BackgroundService
 
             if (opcode == RetailOpcodeKeepAlive)
             {
-                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeKeepAlive, ReadOnlySpan<byte>.Empty);
-                _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
-                output.Write(mapped);
-                bytesWritten = mapped.Length;
-                return true;
+                return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
+                    _authCrypt,
+                    AcoreOpcodeKeepAlive,
+                    ReadOnlySpan<byte>.Empty,
+                    output,
+                    out bytesWritten);
             }
 
             if (opcode == RetailOpcodeTimeSyncResponse)
@@ -3270,11 +3248,12 @@ public sealed class WorldProxyListener : BackgroundService
                     return false;
                 }
 
-                byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeTimeSyncResp, payload[..8]);
-                _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
-                output.Write(mapped);
-                bytesWritten = mapped.Length;
-                return true;
+                return PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
+                    _authCrypt,
+                    AcoreOpcodeTimeSyncResp,
+                    payload[..8],
+                    output,
+                    out bytesWritten);
             }
 
             if (opcode == RetailOpcodeLogDisconnect)
@@ -3293,15 +3272,6 @@ public sealed class WorldProxyListener : BackgroundService
                 onDroppedOpcode?.Invoke(opcode, payloadBytes);
             }
 
-            return true;
-        }
-
-        private bool ForwardSyntheticAcoreCharEnumRequest(IBufferWriter<byte> output, out long bytesWritten)
-        {
-            byte[] mapped = AcoreFrameBuilder.BuildAcoreClientFrame(AcoreOpcodeCharEnum, ReadOnlySpan<byte>.Empty);
-            _authCrypt.TransformClientToServer(mapped.AsSpan(0, 6));
-            output.Write(mapped);
-            bytesWritten = mapped.Length;
             return true;
         }
 
@@ -3340,7 +3310,12 @@ public sealed class WorldProxyListener : BackgroundService
                 return true;
             }
 
-            bool forwarded = ForwardSyntheticAcoreCharEnumRequest(output, out bytesWritten);
+            bool forwarded = PostAuthClientFrameForwardingHelpers.TryWriteEncryptedAcoreClientFrame(
+                _authCrypt,
+                AcoreOpcodeCharEnum,
+                ReadOnlySpan<byte>.Empty,
+                output,
+                out bytesWritten);
             if (forwarded)
             {
                 _lastGlueSyntheticKickUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -4056,7 +4031,7 @@ public sealed class WorldProxyListener : BackgroundService
                 byte[]? enterEncryptedModeFrame = _getEnterEncryptedModeFrame?.Invoke();
                 if (enterEncryptedModeFrame is { Length: > 0 })
                 {
-                    if (!TryWriteRetailServerFrame(enterEncryptedModeFrame, output, out long enterEncryptedBytes, out error))
+                    if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(_bridgeState, enterEncryptedModeFrame, output, out long enterEncryptedBytes, out error))
                     {
                         return false;
                     }
@@ -4078,7 +4053,7 @@ public sealed class WorldProxyListener : BackgroundService
                         else
                         {
                             // Trinity-like behavior: do not block post-auth bootstrap on plaintext ACK.
-                            if (!TryWriteRetailServerFrameBatch(bootstrapPayload, output, out long bootstrapBytes, out error))
+                            if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrameBatch(_bridgeState, bootstrapPayload, output, out long bootstrapBytes, out error))
                             {
                                 return false;
                             }
@@ -4096,7 +4071,7 @@ public sealed class WorldProxyListener : BackgroundService
                     }
                     else
                     {
-                        if (!TryWriteRetailServerFrameBatch(bootstrapPayload, output, out long bootstrapBytes, out error))
+                        if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrameBatch(_bridgeState, bootstrapPayload, output, out long bootstrapBytes, out error))
                         {
                             return false;
                         }
@@ -4145,7 +4120,7 @@ public sealed class WorldProxyListener : BackgroundService
             if (opcode == AcoreOpcodeSmsgPong)
             {
                 byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgPong, payload);
-                return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
+                return PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(_bridgeState, mapped, output, out bytesWritten, out error);
             }
 
             if (opcode == AcoreOpcodeSmsgCharEnum)
@@ -4172,7 +4147,7 @@ public sealed class WorldProxyListener : BackgroundService
                         _onControlledUnlockApplied?.Invoke(payload.Length, Math.Max(0, mapped.Length - 20));
                     }
 
-                    if (!TryWriteRetailServerFrame(mapped, output, out long charEnumBytes, out error))
+                    if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(_bridgeState, mapped, output, out long charEnumBytes, out error))
                     {
                         return false;
                     }
@@ -4181,7 +4156,8 @@ public sealed class WorldProxyListener : BackgroundService
                     wroteCharEnumToClient = true;
                     _onCharEnumReceived?.Invoke();
 
-                    if (!TryWriteRetailServerFrame(
+                    if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
+                            _bridgeState,
                             RetailGluePayloadBuilders.BuildAccountItemCollectionDataFrame(RetailOpcodeSmsgAccountItemCollectionData),
                             output,
                             out long accountCollectionBytes,
@@ -4204,7 +4180,8 @@ public sealed class WorldProxyListener : BackgroundService
                     // Emit pending glue responses in the same turn as enum refresh.
                     if (shouldSendSocialContractResponse)
                     {
-                        if (!TryWriteRetailServerFrame(
+                        if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
+                                _bridgeState,
                                 RetailGluePayloadBuilders.BuildSocialContractRequestResponseFrame(
                                     RetailOpcodeSmsgSocialContractRequestResponse,
                                     showSocialContract: false),
@@ -4221,7 +4198,8 @@ public sealed class WorldProxyListener : BackgroundService
 
                     if (shouldSendUndeleteCooldownStatusResponse)
                     {
-                        if (!TryWriteRetailServerFrame(
+                        if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
+                                _bridgeState,
                                 RetailGluePayloadBuilders.BuildUndeleteCooldownStatusResponseFrame(
                                     RetailOpcodeSmsgUndeleteCooldownStatusResponse,
                                     maxCooldownSeconds: 0u,
@@ -4240,7 +4218,8 @@ public sealed class WorldProxyListener : BackgroundService
 
                     if (shouldSendHotfixConnect)
                     {
-                        if (!TryWriteRetailServerFrame(
+                        if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
+                                _bridgeState,
                                 RetailGluePayloadBuilders.BuildHotfixConnectFrame(RetailOpcodeSmsgHotfixConnect),
                                 output,
                                 out long hotfixBytes,
@@ -4255,7 +4234,8 @@ public sealed class WorldProxyListener : BackgroundService
 
                     while (_bridgeState.TryDequeuePendingBattleNetResponse(out ulong methodType, out ulong objectId, out uint token))
                     {
-                        if (!TryWriteRetailServerFrame(
+                        if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
+                                _bridgeState,
                                 RetailGluePayloadBuilders.BuildBattleNetResponseFrame(
                                     RetailOpcodeSmsgBattleNetResponse,
                                     methodType: methodType,
@@ -4276,7 +4256,8 @@ public sealed class WorldProxyListener : BackgroundService
 
                     if (shouldSendServerTimeOffset)
                     {
-                        if (!TryWriteRetailServerFrame(
+                        if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
+                                _bridgeState,
                                 RetailGluePayloadBuilders.BuildServerTimeOffsetFrame(
                                     RetailOpcodeSmsgServerTimeOffset,
                                     DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
@@ -4296,7 +4277,8 @@ public sealed class WorldProxyListener : BackgroundService
                     {
                         for (int i = 0; i < recordIds.Length; i++)
                         {
-                            if (!TryWriteRetailServerFrame(
+                            if (!PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(
+                                    _bridgeState,
                                     RetailGluePayloadBuilders.BuildDbReplyFrame(
                                         RetailOpcodeSmsgDbReply,
                                         tableHash: tableHash,
@@ -4323,7 +4305,7 @@ public sealed class WorldProxyListener : BackgroundService
             if (opcode == AcoreOpcodeSmsgTimeSyncRequest)
             {
                 byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgTimeSyncRequest, payload);
-                return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
+                return PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(_bridgeState, mapped, output, out bytesWritten, out error);
             }
 
             if (opcode == AcoreOpcodeSmsgWardenData)
@@ -4331,7 +4313,7 @@ public sealed class WorldProxyListener : BackgroundService
                 if (_forwardAcoreWardenAsRetailWarden3Data)
                 {
                     byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgWarden3Data, payload);
-                    return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
+                    return PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(_bridgeState, mapped, output, out bytesWritten, out error);
                 }
 
                 // Legacy AC Warden payload is not retail-compatible at this stage.
@@ -4349,7 +4331,7 @@ public sealed class WorldProxyListener : BackgroundService
                 if (_forwardAcoreAddonInfoAsRetailAddonListRequest)
                 {
                     byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgAddonListRequest, payload);
-                    return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
+                    return PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(_bridgeState, mapped, output, out bytesWritten, out error);
                 }
 
                 // Same as Warden: AC legacy addon blob does not match retail parser expectations.
@@ -4364,7 +4346,7 @@ public sealed class WorldProxyListener : BackgroundService
             if (opcode == AcoreOpcodeSmsgClientCacheVersion)
             {
                 byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgCacheVersion, payload);
-                return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
+                return PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(_bridgeState, mapped, output, out bytesWritten, out error);
             }
 
             if (opcode == AcoreOpcodeSmsgTutorialFlags)
@@ -4372,7 +4354,7 @@ public sealed class WorldProxyListener : BackgroundService
                 if (_forwardAcoreTutorialFlagsAsRetailTutorialFlags)
                 {
                     byte[] mapped = RetailEnvelopeBuilder.BuildRetailWorldFrame(RetailOpcodeSmsgTutorialFlags, payload);
-                    return TryWriteRetailServerFrame(mapped, output, out bytesWritten, out error);
+                    return PostAuthServerFrameWriteHelpers.TryWriteProtectedRetailServerFrame(_bridgeState, mapped, output, out bytesWritten, out error);
                 }
 
                 // Optional data; safe to suppress while auth bootstrap parity is incomplete.
@@ -4392,55 +4374,6 @@ public sealed class WorldProxyListener : BackgroundService
             return true;
         }
 
-        private bool TryWriteRetailServerFrame(
-            byte[] plainFrame,
-            IBufferWriter<byte> output,
-            out long bytesWritten,
-            out string? error)
-        {
-            bytesWritten = 0;
-            error = null;
-
-            if (!_bridgeState.TryProtectRetailServerFrame(plainFrame, out byte[] protectedFrame, out _, out string? protectError))
-            {
-                error = $"Failed to protect Retail server frame: {protectError ?? "<unknown>"}";
-                return false;
-            }
-
-            output.Write(protectedFrame);
-            bytesWritten = protectedFrame.Length;
-            return true;
-        }
-
-        private bool TryWriteRetailServerFrameBatch(
-            ReadOnlySpan<byte> payload,
-            IBufferWriter<byte> output,
-            out long bytesWritten,
-            out string? error)
-        {
-            bytesWritten = 0;
-            error = null;
-
-            if (!RetailFrameCodec.TrySplitRetailWorldFrames(payload, out List<RetailFrameChunk> frames, out string? splitError))
-            {
-                error = splitError ?? "Failed to split retail frame batch.";
-                return false;
-            }
-
-            for (int index = 0; index < frames.Count; index++)
-            {
-                RetailFrameChunk frame = frames[index];
-                if (!TryWriteRetailServerFrame(frame.Frame, output, out long frameBytes, out error))
-                {
-                    return false;
-                }
-
-                bytesWritten += frameBytes;
-            }
-
-            return true;
-        }
-
         private void ResetFrameState()
         {
             _headerBytesRead = 0;
@@ -4453,30 +4386,6 @@ public sealed class WorldProxyListener : BackgroundService
         private readonly record struct BufferedServerFrame(ushort Opcode, byte[] Payload);
     }
 
-    private bool ResolveEffectiveAckGate(out string source)
-    {
-        bool fallback = AckPolicyResolver.ResolveWaitForAckGate(
-            _ackPolicyMode,
-            _options.EnterEncryptedModeAckGateEnabled);
-
-        if (_ackPolicyMode != AckPolicyMode.Auto)
-        {
-            source = $"policy:{_protocolOptions.AckPolicy}";
-            return fallback;
-        }
-
-        if (WorldProxyConfigParsers.TryResolveAckGateFromDecisionArtifact(
-                _protocolOptions.AckPolicyDecisionPath,
-                out bool gateFromArtifact,
-                out string artifactPath))
-        {
-            source = $"artifact:{artifactPath}";
-            return gateFromArtifact;
-        }
-
-        source = "config:WorldProxy.EnterEncryptedModeAckGateEnabled";
-        return fallback;
-    }
 }
 
 

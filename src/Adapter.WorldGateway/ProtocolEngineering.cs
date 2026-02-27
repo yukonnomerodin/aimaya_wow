@@ -98,6 +98,34 @@ internal static class AckPolicyResolver
             _ => worldProxyAckGateDefault
         };
     }
+
+    public static bool ResolveEffectiveWaitForAckGate(
+        AckPolicyMode mode,
+        bool worldProxyAckGateDefault,
+        string? policyValue,
+        string? decisionArtifactPath,
+        out string source)
+    {
+        bool fallback = ResolveWaitForAckGate(mode, worldProxyAckGateDefault);
+
+        if (mode != AckPolicyMode.Auto)
+        {
+            source = $"policy:{policyValue}";
+            return fallback;
+        }
+
+        if (WorldProxyConfigParsers.TryResolveAckGateFromDecisionArtifact(
+                decisionArtifactPath,
+                out bool gateFromArtifact,
+                out string artifactPath))
+        {
+            source = $"artifact:{artifactPath}";
+            return gateFromArtifact;
+        }
+
+        source = "config:WorldProxy.EnterEncryptedModeAckGateEnabled";
+        return fallback;
+    }
 }
 
 public sealed class ProtocolEngineeringOptions
