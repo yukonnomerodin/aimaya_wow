@@ -1,5 +1,0 @@
-E:\_acproject\aimaya_wow\src\Adapter.AuthGateway\obj\build_verify\Debug\net8.0\Adapter.AuthGateway.csproj.AssemblyReference.cache
-E:\_acproject\aimaya_wow\src\Adapter.AuthGateway\obj\build_verify\Debug\net8.0\Adapter.AuthGateway.GeneratedMSBuildEditorConfig.editorconfig
-E:\_acproject\aimaya_wow\src\Adapter.AuthGateway\obj\build_verify\Debug\net8.0\Adapter.AuthGateway.AssemblyInfoInputs.cache
-E:\_acproject\aimaya_wow\src\Adapter.AuthGateway\obj\build_verify\Debug\net8.0\Adapter.AuthGateway.AssemblyInfo.cs
-E:\_acproject\aimaya_wow\src\Adapter.AuthGateway\obj\build_verify\Debug\net8.0\Adapter.AuthGateway.csproj.CoreCompileInputs.cache

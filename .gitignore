@@ -5,3 +5,14 @@ docs/architecture/**
 docs/handshake/**
 artifacts/
 scripts/
+
+# Build artifacts
+**/bin/
+**/obj/
+
+# Local secrets/certs
+*.pfx
+*.snk
+
+# Local runtime logs/temp outputs
+tmp_*.log
