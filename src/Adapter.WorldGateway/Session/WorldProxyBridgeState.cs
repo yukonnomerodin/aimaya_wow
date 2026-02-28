@@ -373,6 +373,13 @@ internal sealed class WorldProxyBridgeState
                 return "reason=24";
             }
 
+            if (reason == 14)
+            {
+                return CurrentStage >= BridgeStage.CHAR_ENUM_RECEIVED
+                    ? "none"
+                    : "inconclusive";
+            }
+
             return $"reason={reason}";
         }
 

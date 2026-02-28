@@ -39,6 +39,11 @@ internal static class MatrixPolicyGuard
                     continue;
                 }
 
+                if (IsBenignRejectedRow(columns))
+                {
+                    continue;
+                }
+
                 if (!string.Equals(columnSingleChangedVariable, singleChangedVariable, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
@@ -58,6 +63,27 @@ internal static class MatrixPolicyGuard
         }
 
         return false;
+    }
+
+    private static bool IsBenignRejectedRow(string[] columns)
+    {
+        if (columns.Length < 8)
+        {
+            return false;
+        }
+
+        // Synthetic probe runs can end with disconnect reason=14 after reaching CHAR_ENUM_RECEIVED.
+        // Those runs are operationally valid and must not hard-block a replay of the same refactor variable.
+        string failureClass = columns[6].Trim();
+        if (!string.Equals(failureClass, "reason=14", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string actualObservable = columns[5];
+        bool runValidTrue = actualObservable.IndexOf("run_valid=True", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool reachedCharEnum = actualObservable.IndexOf("stage=CHAR_ENUM_RECEIVED", StringComparison.OrdinalIgnoreCase) >= 0;
+        return runValidTrue && reachedCharEnum;
     }
 
     private static bool TryParseCsvColumns(string line, out string[] columns)
