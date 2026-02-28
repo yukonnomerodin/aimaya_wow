@@ -13,7 +13,7 @@ public sealed class GatewaySmokeFixture : IDisposable
     public GatewaySmokeFixture()
     {
         _repoRoot = ResolveRepoRoot();
-        HypothesisId = "M2-R5-INTEGRATION-HANDSHAKE-RELAY-SMOKE-103";
+        HypothesisId = "M2-R6-SERVICE-BOUNDARY-RECOVERY-SLO-106";
         IsEnabled = string.Equals(
             Environment.GetEnvironmentVariable("WORLDGW_ENABLE_INTEGRATION_SMOKE"),
             "1",
@@ -47,6 +47,7 @@ public sealed class GatewaySmokeFixture : IDisposable
 
         ProbeJson = JsonDocument.Parse(ExtractJson(probeOutput));
         ValidationJson = JsonDocument.Parse(ExtractJson(validationOutput));
+        ReportJson = LoadReportJsonFromValidation(ValidationJson.RootElement);
     }
 
     public string HypothesisId { get; }
@@ -57,10 +58,13 @@ public sealed class GatewaySmokeFixture : IDisposable
 
     public JsonDocument? ValidationJson { get; }
 
+    public JsonDocument? ReportJson { get; }
+
     public void Dispose()
     {
         ProbeJson?.Dispose();
         ValidationJson?.Dispose();
+        ReportJson?.Dispose();
     }
 
     private string RunScript(string relativeScriptPath, string arguments)
@@ -194,6 +198,36 @@ public sealed class GatewaySmokeFixture : IDisposable
         }
 
         return text[start..(end + 1)];
+    }
+
+    private JsonDocument LoadReportJsonFromValidation(JsonElement validationRoot)
+    {
+        if (!validationRoot.TryGetProperty("report_path", out JsonElement reportPathElement))
+        {
+            throw new InvalidDataException("Validation JSON does not contain report_path.");
+        }
+
+        string reportPathRaw = reportPathElement.GetString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(reportPathRaw) ||
+            string.Equals(reportPathRaw, "<none>", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Validation JSON report_path is empty.");
+        }
+
+        string reportPath = Path.IsPathRooted(reportPathRaw)
+            ? reportPathRaw
+            : Path.GetFullPath(Path.Combine(_repoRoot, reportPathRaw));
+        for (int attempt = 1; attempt <= 20; attempt++)
+        {
+            if (File.Exists(reportPath))
+            {
+                return JsonDocument.Parse(File.ReadAllText(reportPath));
+            }
+
+            Thread.Sleep(200);
+        }
+
+        throw new FileNotFoundException("Handshake report path from validation JSON does not exist.", reportPath);
     }
 
     private static void WaitForTcpPort(string host, int port, int timeoutMs)

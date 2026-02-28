@@ -15,6 +15,11 @@ internal sealed record HandshakeLabReport
     public string FailureClass { get; init; } = "inconclusive";
     public string ActiveLayer { get; init; } = "State";
     public string ParityAxis { get; init; } = "state-machine parity";
+    public string ServiceBoundaryContractVersion { get; init; } = WorldProxyServiceBoundaryContract.R6ServiceBoundaryV1;
+    public string RelayFailureRecoveryPolicy { get; init; } = global::Adapter.WorldGateway.RelayFailureRecoveryPolicy.CancelSiblingAndClose.ToString();
+    public int RelayFailureDrainTimeoutMs { get; init; }
+    public int DbAuthBridgeTimeoutMs { get; init; }
+    public string HandshakeDiagnosticsDispatchMode { get; init; } = global::Adapter.WorldGateway.HandshakeDiagnosticsDispatchMode.Sync.ToString();
     public uint ConnectionId { get; init; }
     public bool AckObserved { get; init; }
     public long? AckConfirmedElapsedMs { get; init; }
@@ -100,6 +105,15 @@ internal sealed record HandshakeLabReport
         string deferredFlushPath = state.DeferredFlushPath;
         BridgeStage currentStage = state.CurrentStage;
         string failureClass = state.ResolveFailureClass();
+        string serviceBoundaryContractVersion = WorldProxyServiceBoundaryContract.ResolveConfiguredVersion(
+            options.ServiceBoundaryContractVersion,
+            out _);
+        RelayFailureRecoveryPolicy relayFailureRecoveryPolicy = WorldProxyConfigParsers.ParseRelayFailureRecoveryPolicy(
+            options.RelayFailureRecoveryPolicy,
+            out _);
+        HandshakeDiagnosticsDispatchMode handshakeDiagnosticsDispatchMode = WorldProxyConfigParsers.ParseHandshakeDiagnosticsDispatchMode(
+            options.HandshakeDiagnosticsDispatchMode,
+            out _);
         string boundary = hasBoundary ? $"{deferredSent}/{deferredTotal}" : "<none>";
         string deferredFirst = hasDeferredFirst
             ? $"0x{deferredOpcode:X8}(body={deferredBodyLength},frame={deferredFrameBytes})"
@@ -128,6 +142,11 @@ internal sealed record HandshakeLabReport
             FailureClass = failureClass,
             ActiveLayer = state.ActiveLayer,
             ParityAxis = state.ParityAxis,
+            ServiceBoundaryContractVersion = serviceBoundaryContractVersion,
+            RelayFailureRecoveryPolicy = relayFailureRecoveryPolicy.ToString(),
+            RelayFailureDrainTimeoutMs = options.RelayFailureDrainTimeoutMs,
+            DbAuthBridgeTimeoutMs = options.AuthBridgeDbTimeoutMs,
+            HandshakeDiagnosticsDispatchMode = handshakeDiagnosticsDispatchMode.ToString(),
             ConnectionId = connectionId,
             AckObserved = state.AckObserved,
             AckConfirmedElapsedMs = ackElapsedMs >= 0 ? ackElapsedMs : null,

@@ -1,12 +1,15 @@
 name: WorldGateway Perf Gate
 
 on:
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R5-TRANSLATOR-AUTHBRIDGE-CLUSTER-SPLIT-103"
+        default: "M2-R6-SERVICE-BOUNDARY-RECOVERY-SLO-106"
       iterations:
         description: "Target successful probe iterations"
         required: true
@@ -32,6 +35,13 @@ jobs:
   perf-gate:
     name: Perf Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
+    env:
+      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SERVICE-BOUNDARY-RECOVERY-SLO-106' }}
+      PERF_ITERATIONS: ${{ github.event.inputs.iterations || '30' }}
+      PERF_PARALLELISM: ${{ github.event.inputs.parallelism || '4' }}
+      PERF_P50_GATE_MS: ${{ github.event.inputs.p50_gate_ms || '500' }}
+      PERF_P95_GATE_MS: ${{ github.event.inputs.p95_gate_ms || '600' }}
+      PERF_MAX_GATE_MS: ${{ github.event.inputs.max_gate_ms || '620' }}
 
     steps:
       - name: Checkout
@@ -50,15 +60,15 @@ jobs:
         shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_retail_gateways.ps1 `
-            -HypothesisId "${{ inputs.hypothesis_id }}"
+            -HypothesisId "${{ env.PERF_HYPOTHESIS_ID }}"
 
       - name: Run Probe Perf Gate
         shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_world_probe_perf_gate.ps1 `
-            -Iterations ${{ inputs.iterations }} `
-            -Parallelism ${{ inputs.parallelism }} `
-            -P50GateMs ${{ inputs.p50_gate_ms }} `
-            -P95GateMs ${{ inputs.p95_gate_ms }} `
-            -MaxDurationGateMs ${{ inputs.max_gate_ms }} `
-            -HypothesisId "${{ inputs.hypothesis_id }}"
+            -Iterations ${{ env.PERF_ITERATIONS }} `
+            -Parallelism ${{ env.PERF_PARALLELISM }} `
+            -P50GateMs ${{ env.PERF_P50_GATE_MS }} `
+            -P95GateMs ${{ env.PERF_P95_GATE_MS }} `
+            -MaxDurationGateMs ${{ env.PERF_MAX_GATE_MS }} `
+            -HypothesisId "${{ env.PERF_HYPOTHESIS_ID }}"

@@ -11,6 +11,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -30,6 +31,12 @@ public sealed partial class WorldProxyListener : BackgroundService
     private readonly ILogger<WorldProxyListener> _logger;
     private readonly WorldProxyOptions _options;
     private readonly ProtocolEngineeringOptions _protocolOptions;
+    private readonly string _serviceBoundaryContractVersion;
+    private readonly bool _serviceBoundaryContractVersionValid;
+    private readonly RelayFailureRecoveryPolicy _relayFailureRecoveryPolicy;
+    private readonly bool _relayFailureRecoveryPolicyValid;
+    private readonly HandshakeDiagnosticsDispatchMode _handshakeDiagnosticsDispatchMode;
+    private readonly bool _handshakeDiagnosticsDispatchModeValid;
     private readonly AckPolicyMode _ackPolicyMode;
     private readonly BootstrapFlushTriggerMode _bootstrapFlushTriggerMode;
     private readonly bool _bootstrapFlushTriggerModeValid;
@@ -109,5 +116,7 @@ public sealed partial class WorldProxyListener : BackgroundService
 
     private readonly ConcurrentDictionary<string, long> _reconnectCooldownUntilByKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly WorldSessionMaterialRepository _worldSessionMaterialRepository;
+    private readonly Channel<HandshakeLabReportWriteRequest>? _handshakeDiagnosticsChannel;
+    private Task? _handshakeDiagnosticsDrainTask;
 
 }

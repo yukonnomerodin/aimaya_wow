@@ -5,6 +5,12 @@ namespace Adapter.WorldGateway;
 public sealed partial class WorldProxyListener
 {
     private readonly record struct ParsedOptionInitializationResult(
+        string ServiceBoundaryContractVersion,
+        bool ServiceBoundaryContractVersionValid,
+        RelayFailureRecoveryPolicy RelayFailureRecoveryPolicy,
+        bool RelayFailureRecoveryPolicyValid,
+        HandshakeDiagnosticsDispatchMode HandshakeDiagnosticsDispatchMode,
+        bool HandshakeDiagnosticsDispatchModeValid,
         AckPolicyMode AckPolicyMode,
         BootstrapFlushTriggerMode BootstrapFlushTriggerMode,
         bool BootstrapFlushTriggerModeValid,
@@ -23,6 +29,15 @@ public sealed partial class WorldProxyListener
         WorldProxyOptions options,
         ProtocolEngineeringOptions protocolOptions)
     {
+        string serviceBoundaryContractVersion = WorldProxyServiceBoundaryContract.ResolveConfiguredVersion(
+            options.ServiceBoundaryContractVersion,
+            out bool serviceBoundaryContractVersionValid);
+        RelayFailureRecoveryPolicy relayFailureRecoveryPolicy = WorldProxyConfigParsers.ParseRelayFailureRecoveryPolicy(
+            options.RelayFailureRecoveryPolicy,
+            out bool relayFailureRecoveryPolicyValid);
+        HandshakeDiagnosticsDispatchMode handshakeDiagnosticsDispatchMode = WorldProxyConfigParsers.ParseHandshakeDiagnosticsDispatchMode(
+            options.HandshakeDiagnosticsDispatchMode,
+            out bool handshakeDiagnosticsDispatchModeValid);
         AckPolicyMode ackPolicyMode = AckPolicyResolver.Parse(protocolOptions.AckPolicy);
         BootstrapFlushTriggerMode bootstrapFlushTriggerMode = WorldProxyConfigParsers.ParseBootstrapFlushTriggerMode(
             options.BootstrapFlushTriggerSource,
@@ -79,6 +94,12 @@ public sealed partial class WorldProxyListener
         }
 
         return new ParsedOptionInitializationResult(
+            ServiceBoundaryContractVersion: serviceBoundaryContractVersion,
+            ServiceBoundaryContractVersionValid: serviceBoundaryContractVersionValid,
+            RelayFailureRecoveryPolicy: relayFailureRecoveryPolicy,
+            RelayFailureRecoveryPolicyValid: relayFailureRecoveryPolicyValid,
+            HandshakeDiagnosticsDispatchMode: handshakeDiagnosticsDispatchMode,
+            HandshakeDiagnosticsDispatchModeValid: handshakeDiagnosticsDispatchModeValid,
             AckPolicyMode: ackPolicyMode,
             BootstrapFlushTriggerMode: bootstrapFlushTriggerMode,
             BootstrapFlushTriggerModeValid: bootstrapFlushTriggerModeValid,

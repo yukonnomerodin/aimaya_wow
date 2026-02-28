@@ -223,6 +223,18 @@ public sealed class WorldProxyOptions
     [Range(100, 30000)]
     public int AuthBridgeDbTimeoutMs { get; init; } = 3000;
 
+    public string ServiceBoundaryContractVersion { get; init; } = WorldProxyServiceBoundaryContract.R6ServiceBoundaryV1;
+
+    public string RelayFailureRecoveryPolicy { get; init; } = "cancel_sibling_and_close";
+
+    [Range(0, 5000)]
+    public int RelayFailureDrainTimeoutMs { get; init; } = 250;
+
+    public string HandshakeDiagnosticsDispatchMode { get; init; } = "sync";
+
+    [Range(1, 4096)]
+    public int HandshakeDiagnosticsBackgroundQueueCapacity { get; init; } = 256;
+
     public bool EnableAcoreToRetailAuthChallengeBridgeProbe { get; init; } = true;
 
     public bool EnableRetailToAcoreAuthSessionBridge { get; init; } = true;

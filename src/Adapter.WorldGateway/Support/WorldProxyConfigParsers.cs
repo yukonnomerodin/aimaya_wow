@@ -7,6 +7,48 @@ namespace Adapter.WorldGateway;
 
 internal static class WorldProxyConfigParsers
 {
+    public static RelayFailureRecoveryPolicy ParseRelayFailureRecoveryPolicy(string? value, out bool valid)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            valid = true;
+            return RelayFailureRecoveryPolicy.CancelSiblingAndClose;
+        }
+
+        string normalized = value.Trim().ToLowerInvariant();
+        valid = true;
+        return normalized switch
+        {
+            "cancel_sibling_and_close" => RelayFailureRecoveryPolicy.CancelSiblingAndClose,
+            "cancel-sibling-and-close" => RelayFailureRecoveryPolicy.CancelSiblingAndClose,
+            "cancelandclose" => RelayFailureRecoveryPolicy.CancelSiblingAndClose,
+            "cancel_sibling_drain_and_close" => RelayFailureRecoveryPolicy.CancelSiblingDrainAndClose,
+            "cancel-sibling-drain-and-close" => RelayFailureRecoveryPolicy.CancelSiblingDrainAndClose,
+            "drain" => RelayFailureRecoveryPolicy.CancelSiblingDrainAndClose,
+            _ => ParseRelayFailureRecoveryPolicyInvalid(out valid)
+        };
+    }
+
+    public static HandshakeDiagnosticsDispatchMode ParseHandshakeDiagnosticsDispatchMode(string? value, out bool valid)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            valid = true;
+            return HandshakeDiagnosticsDispatchMode.Sync;
+        }
+
+        string normalized = value.Trim().ToLowerInvariant();
+        valid = true;
+        return normalized switch
+        {
+            "sync" => HandshakeDiagnosticsDispatchMode.Sync,
+            "background_channel" => HandshakeDiagnosticsDispatchMode.BackgroundChannel,
+            "background-channel" => HandshakeDiagnosticsDispatchMode.BackgroundChannel,
+            "background" => HandshakeDiagnosticsDispatchMode.BackgroundChannel,
+            _ => ParseHandshakeDiagnosticsDispatchModeInvalid(out valid)
+        };
+    }
+
     public static BootstrapFlushTriggerMode ParseBootstrapFlushTriggerMode(string? value, out bool valid)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -184,5 +226,17 @@ internal static class WorldProxyConfigParsers
     {
         valid = false;
         return BootstrapFlushTriggerMode.Ack;
+    }
+
+    private static RelayFailureRecoveryPolicy ParseRelayFailureRecoveryPolicyInvalid(out bool valid)
+    {
+        valid = false;
+        return RelayFailureRecoveryPolicy.CancelSiblingAndClose;
+    }
+
+    private static HandshakeDiagnosticsDispatchMode ParseHandshakeDiagnosticsDispatchModeInvalid(out bool valid)
+    {
+        valid = false;
+        return HandshakeDiagnosticsDispatchMode.Sync;
     }
 }

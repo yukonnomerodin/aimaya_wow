@@ -8,6 +8,30 @@ public sealed partial class WorldProxyListener
 {
     private void LogStartupProbeBehaviorWarnings()
     {
+        if (!_serviceBoundaryContractVersionValid)
+        {
+            _logger.LogWarning(
+                "WorldProxy option ServiceBoundaryContractVersion is invalid ('{ConfiguredValue}'). Falling back to '{ResolvedValue}'.",
+                _options.ServiceBoundaryContractVersion,
+                _serviceBoundaryContractVersion);
+        }
+
+        if (!_relayFailureRecoveryPolicyValid)
+        {
+            _logger.LogWarning(
+                "WorldProxy option RelayFailureRecoveryPolicy is invalid ('{ConfiguredValue}'). Falling back to '{ResolvedValue}'.",
+                _options.RelayFailureRecoveryPolicy,
+                _relayFailureRecoveryPolicy);
+        }
+
+        if (!_handshakeDiagnosticsDispatchModeValid)
+        {
+            _logger.LogWarning(
+                "WorldProxy option HandshakeDiagnosticsDispatchMode is invalid ('{ConfiguredValue}'). Falling back to '{ResolvedValue}'.",
+                _options.HandshakeDiagnosticsDispatchMode,
+                _handshakeDiagnosticsDispatchMode);
+        }
+
         if (!_bootstrapFlushTriggerModeValid)
         {
             _logger.LogWarning(

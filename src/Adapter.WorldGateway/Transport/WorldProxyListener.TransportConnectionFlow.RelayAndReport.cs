@@ -8,6 +8,14 @@ namespace Adapter.WorldGateway;
 
 public sealed partial class WorldProxyListener
 {
+    private readonly record struct RelayFailureRecoveryOutcome(
+        long ClientToWorldBytes,
+        long WorldToClientBytes,
+        bool DrainAttempted,
+        bool DrainCompleted,
+        long DrainElapsedMs,
+        string Details);
+
     private async ValueTask<(long ClientToWorld, long WorldToClient)> RunRelayLoopAsync(
         uint connectionId,
         string downstreamRemote,
@@ -107,20 +115,36 @@ public sealed partial class WorldProxyListener
         }
         catch (Exception ex)
         {
+            RelayFailureRecoveryOutcome recoveryOutcome = await ApplyRelayFailureRecoveryPolicyAsync(
+                    downstreamToUpstream,
+                    upstreamToDownstream,
+                    relayCts)
+                .ConfigureAwait(false);
+            transferredClientToWorld = recoveryOutcome.ClientToWorldBytes;
+            transferredWorldToClient = recoveryOutcome.WorldToClientBytes;
+            bridgeState.SetEvidenceContext("Transport", "relay failure recovery policy");
+            bridgeState.MarkTemporalInvariant(
+                name: "relay_failure_recovery_policy_applied",
+                passed: true,
+                expected: "relay faults apply configured recovery policy before connection shutdown",
+                actual: $"policy={_relayFailureRecoveryPolicy};drain_attempted={recoveryOutcome.DrainAttempted};drain_completed={recoveryOutcome.DrainCompleted};drain_elapsed_ms={recoveryOutcome.DrainElapsedMs};details={recoveryOutcome.Details}");
+
             string clientToWorldStatus = downstreamToUpstream.Status.ToString();
             string worldToClientStatus = upstreamToDownstream.Status.ToString();
             string clientToWorldError = downstreamToUpstream.Exception?.GetBaseException().Message ?? "<none>";
             string worldToClientError = upstreamToDownstream.Exception?.GetBaseException().Message ?? "<none>";
             _logger.LogWarning(
                 ex,
-                "Proxy loop error: ConnectionId={ConnectionId}, Downstream={DownstreamRemote}, Upstream={UpstreamRemote}, ClientToWorldStatus={ClientToWorldStatus}, WorldToClientStatus={WorldToClientStatus}, ClientToWorldError={ClientToWorldError}, WorldToClientError={WorldToClientError}",
+                "Proxy loop error: ConnectionId={ConnectionId}, Downstream={DownstreamRemote}, Upstream={UpstreamRemote}, ClientToWorldStatus={ClientToWorldStatus}, WorldToClientStatus={WorldToClientStatus}, ClientToWorldError={ClientToWorldError}, WorldToClientError={WorldToClientError}, RelayFailureRecoveryPolicy={RelayFailureRecoveryPolicy}, RelayFailureRecoveryDetails={RelayFailureRecoveryDetails}",
                 connectionId,
                 downstreamRemote,
                 upstreamRemote,
                 clientToWorldStatus,
                 worldToClientStatus,
                 clientToWorldError,
-                worldToClientError);
+                worldToClientError,
+                _relayFailureRecoveryPolicy,
+                recoveryOutcome.Details);
         }
         finally
         {
@@ -131,6 +155,55 @@ public sealed partial class WorldProxyListener
         }
 
         return (transferredClientToWorld, transferredWorldToClient);
+    }
+
+    private async ValueTask<RelayFailureRecoveryOutcome> ApplyRelayFailureRecoveryPolicyAsync(
+        Task<long> downstreamToUpstream,
+        Task<long> upstreamToDownstream,
+        CancellationTokenSource relayCts)
+    {
+        relayCts.Cancel();
+
+        long clientToWorld = 0;
+        long worldToClient = 0;
+        bool drainAttempted = false;
+        bool drainCompleted = false;
+        long drainElapsedMs = 0;
+
+        if (_relayFailureRecoveryPolicy == RelayFailureRecoveryPolicy.CancelSiblingDrainAndClose &&
+            _options.RelayFailureDrainTimeoutMs > 0)
+        {
+            drainAttempted = true;
+            long drainStartMs = Environment.TickCount64;
+            Task allRelays = Task.WhenAll(downstreamToUpstream, upstreamToDownstream);
+            Task completed = await Task.WhenAny(
+                    allRelays,
+                    Task.Delay(_options.RelayFailureDrainTimeoutMs))
+                .ConfigureAwait(false);
+            drainElapsedMs = Math.Max(0, Environment.TickCount64 - drainStartMs);
+            drainCompleted = ReferenceEquals(completed, allRelays);
+        }
+
+        if (downstreamToUpstream.IsCompletedSuccessfully)
+        {
+            clientToWorld = downstreamToUpstream.Result;
+        }
+
+        if (upstreamToDownstream.IsCompletedSuccessfully)
+        {
+            worldToClient = upstreamToDownstream.Result;
+        }
+
+        string details = drainAttempted
+            ? $"drain_timeout_ms={_options.RelayFailureDrainTimeoutMs}"
+            : "drain_disabled";
+        return new RelayFailureRecoveryOutcome(
+            ClientToWorldBytes: clientToWorld,
+            WorldToClientBytes: worldToClient,
+            DrainAttempted: drainAttempted,
+            DrainCompleted: drainCompleted,
+            DrainElapsedMs: drainElapsedMs,
+            Details: details);
     }
 
     private void TryWriteHandshakeLabReport(
@@ -156,18 +229,19 @@ public sealed partial class WorldProxyListener
                 DateTimeOffset.UtcNow,
                 transferredClientToWorld,
                 transferredWorldToClient);
+            HandshakeLabReportWriteRequest request = new(
+                ConnectionId: connectionId,
+                Report: report,
+                RunlogsDirectory: WorldGatewayPathResolver.EnsureHandshakeRunlogsDirectory(_options),
+                ProofPackRoot: WorldGatewayPathResolver.ResolveProofPackRoot(_options));
 
-            string reportPath = HandshakeDiagnosticsWriters.WriteHandshakeLabReport(
-                report,
-                WorldGatewayPathResolver.EnsureHandshakeRunlogsDirectory(_options));
-            HandshakeDiagnosticsWriters.AppendNegativeEvidenceMatrixRow(
-                reportPath,
-                report,
-                WorldGatewayPathResolver.ResolveProofPackRoot(_options));
-            _logger.LogInformation(
-                "[WorldProxy][HANDSHAKE-LAB] Report written. ConnectionId={ConnectionId}, Path={Path}",
-                connectionId,
-                reportPath);
+            bool queued =
+                _handshakeDiagnosticsDispatchMode == HandshakeDiagnosticsDispatchMode.BackgroundChannel &&
+                TryEnqueueHandshakeLabReport(request);
+            if (!queued)
+            {
+                WriteHandshakeLabReportCore(request);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {

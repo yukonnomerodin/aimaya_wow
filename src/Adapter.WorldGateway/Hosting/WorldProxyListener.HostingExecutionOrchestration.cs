@@ -7,6 +7,7 @@ public sealed partial class WorldProxyListener
         ValidateProtocolExperimentContractOrThrow();
 
         InitializeListenerAndLogStartupState();
+        StartHandshakeDiagnosticsDispatcher();
 
         try
         {
@@ -15,6 +16,7 @@ public sealed partial class WorldProxyListener
         finally
         {
             await StopListenerAndAwaitActiveConnectionsAsync().ConfigureAwait(false);
+            await StopHandshakeDiagnosticsDispatcherAsync().ConfigureAwait(false);
         }
     }
 }

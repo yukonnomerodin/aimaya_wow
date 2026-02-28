@@ -64,6 +64,50 @@ public sealed class HandshakeRelaySmokeTests : IClassFixture<GatewaySmokeFixture
         Assert.NotEqual("<none>", GetRequiredString(validationRoot, "deferred_flush_path"));
     }
 
+    [Fact]
+    public void BoundaryContract_ContainsAckDeferredAndDbInvariants()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        if (!_fixture.IsEnabled)
+        {
+            return;
+        }
+
+        JsonElement reportRoot = AssertJson(_fixture.ReportJson);
+        Assert.True(GetRequiredBoolean(reportRoot, "ack_observed"));
+        Assert.NotEqual("<none>", GetRequiredString(reportRoot, "deferred_flush_path"));
+
+        JsonElement temporalInvariants = GetRequiredProperty(reportRoot, "temporal_invariants");
+        Assert.Equal(JsonValueKind.Array, temporalInvariants.ValueKind);
+        Assert.True(ContainsInvariant(temporalInvariants, "enter_encrypted_ack_within_timeout"));
+        Assert.True(ContainsInvariant(temporalInvariants, "db_parity_gate"));
+    }
+
+    [Fact]
+    public void BoundaryContract_ContainsServiceBoundaryAndRecoveryMetadata()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        if (!_fixture.IsEnabled)
+        {
+            return;
+        }
+
+        JsonElement reportRoot = AssertJson(_fixture.ReportJson);
+        Assert.Equal("r6.service_boundary.v1", GetRequiredString(reportRoot, "service_boundary_contract_version"));
+        Assert.True(GetRequiredInt(reportRoot, "db_auth_bridge_timeout_ms") > 0);
+        Assert.True(GetRequiredInt(reportRoot, "relay_failure_drain_timeout_ms") >= 0);
+        Assert.NotEqual(string.Empty, GetRequiredString(reportRoot, "relay_failure_recovery_policy"));
+        Assert.NotEqual(string.Empty, GetRequiredString(reportRoot, "handshake_diagnostics_dispatch_mode"));
+    }
+
     private static JsonElement AssertJson(JsonDocument? json)
     {
         Assert.NotNull(json);
@@ -84,5 +128,28 @@ public sealed class HandshakeRelaySmokeTests : IClassFixture<GatewaySmokeFixture
     private static string GetRequiredString(JsonElement root, string propertyName)
     {
         return GetRequiredProperty(root, propertyName).GetString() ?? string.Empty;
+    }
+
+    private static int GetRequiredInt(JsonElement root, string propertyName)
+    {
+        return GetRequiredProperty(root, propertyName).GetInt32();
+    }
+
+    private static bool ContainsInvariant(JsonElement temporalInvariants, string invariantName)
+    {
+        foreach (JsonElement item in temporalInvariants.EnumerateArray())
+        {
+            if (!item.TryGetProperty("Name", out JsonElement nameElement))
+            {
+                continue;
+            }
+
+            if (string.Equals(nameElement.GetString(), invariantName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

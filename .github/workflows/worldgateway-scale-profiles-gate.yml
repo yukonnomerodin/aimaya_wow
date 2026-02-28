@@ -9,7 +9,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R5-PERF-GATE-HOTPATH-PARALLEL-104"
+        default: "M2-R6-SERVICE-BOUNDARY-RECOVERY-SLO-106"
       iterations_per_profile:
         description: "Target successful probe iterations per profile"
         required: true
@@ -19,6 +19,9 @@ jobs:
   scale-gate:
     name: Scale Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
+    env:
+      SCALE_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SERVICE-BOUNDARY-RECOVERY-SLO-106' }}
+      SCALE_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '16' }}
 
     steps:
       - name: Checkout
@@ -37,12 +40,12 @@ jobs:
         shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_retail_gateways.ps1 `
-            -HypothesisId "${{ inputs.hypothesis_id }}"
+            -HypothesisId "${{ env.SCALE_HYPOTHESIS_ID }}"
 
       - name: Run Scale Profiles Gate (1/4/8/16)
         shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_world_probe_scale_profiles.ps1 `
-            -HypothesisId "${{ inputs.hypothesis_id }}" `
-            -IterationsPerProfile ${{ inputs.iterations_per_profile }} `
+            -HypothesisId "${{ env.SCALE_HYPOTHESIS_ID }}" `
+            -IterationsPerProfile ${{ env.SCALE_ITERATIONS_PER_PROFILE }} `
             -Profiles "1,4,8,16"

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Threading.Channels;
 
 namespace Adapter.WorldGateway;
 
@@ -30,6 +31,12 @@ public sealed partial class WorldProxyListener
         _probeAuthResponseReplayPatchTopVirtualRealmAddressToRuntimeRealm = _options.ProbeAuthResponseReplayPatchTopVirtualRealmAddressToRuntimeRealm;
         _probeAuthResponseReplayBisectionResultOnlyErrorOk = _options.ProbeAuthResponseReplayBisectionResultOnlyErrorOk;
         ParsedOptionInitializationResult parsedOptionInitialization = ParseOptionInitialization(_options, _protocolOptions);
+        _serviceBoundaryContractVersion = parsedOptionInitialization.ServiceBoundaryContractVersion;
+        _serviceBoundaryContractVersionValid = parsedOptionInitialization.ServiceBoundaryContractVersionValid;
+        _relayFailureRecoveryPolicy = parsedOptionInitialization.RelayFailureRecoveryPolicy;
+        _relayFailureRecoveryPolicyValid = parsedOptionInitialization.RelayFailureRecoveryPolicyValid;
+        _handshakeDiagnosticsDispatchMode = parsedOptionInitialization.HandshakeDiagnosticsDispatchMode;
+        _handshakeDiagnosticsDispatchModeValid = parsedOptionInitialization.HandshakeDiagnosticsDispatchModeValid;
         _ackPolicyMode = parsedOptionInitialization.AckPolicyMode;
         _bootstrapFlushTriggerMode = parsedOptionInitialization.BootstrapFlushTriggerMode;
         _bootstrapFlushTriggerModeValid = parsedOptionInitialization.BootstrapFlushTriggerModeValid;
@@ -45,6 +52,18 @@ public sealed partial class WorldProxyListener
         foreach (uint dropOpcode in parsedOptionInitialization.ProbeDropDeferredOpcodes)
         {
             _probeDropDeferredOpcodes.Add(dropOpcode);
+        }
+
+        if (_handshakeDiagnosticsDispatchMode == HandshakeDiagnosticsDispatchMode.BackgroundChannel)
+        {
+            _handshakeDiagnosticsChannel = Channel.CreateBounded<HandshakeLabReportWriteRequest>(
+                new BoundedChannelOptions(_options.HandshakeDiagnosticsBackgroundQueueCapacity)
+                {
+                    SingleReader = true,
+                    SingleWriter = false,
+                    FullMode = BoundedChannelFullMode.Wait,
+                    AllowSynchronousContinuations = false
+                });
         }
 
         ProbeFixedHexPayloadLoadResult preludePayloadLoad = LoadOptionalFixedLengthHexPayload(
