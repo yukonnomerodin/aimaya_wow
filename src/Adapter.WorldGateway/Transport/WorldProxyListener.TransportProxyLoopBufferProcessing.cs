@@ -161,10 +161,7 @@ public sealed partial class WorldProxyListener
         bytesWritten += authBridgeResult.BytesWritten;
         if (authBridgeResult.ShouldTerminateConnection)
         {
-            return new ProxyLoopBufferProcessingResult(
-                ShouldTerminateConnection: true,
-                ShouldBreakRelay: false,
-                BytesWritten: bytesWritten);
+            return CreateBufferProcessingTerminateResult(bytesWritten);
         }
 
         if (!authBridgeResult.HandledByBridge)
@@ -190,10 +187,7 @@ public sealed partial class WorldProxyListener
                         connectionId,
                         transformError ?? "<unknown>");
 
-                    return new ProxyLoopBufferProcessingResult(
-                        ShouldTerminateConnection: true,
-                        ShouldBreakRelay: false,
-                        BytesWritten: bytesWritten);
+                    return CreateBufferProcessingTerminateResult(bytesWritten);
                 }
 
                 bytesWritten += transformedBytes;
@@ -207,10 +201,7 @@ public sealed partial class WorldProxyListener
                         connectionId,
                         transformError ?? "<unknown>");
 
-                    return new ProxyLoopBufferProcessingResult(
-                        ShouldTerminateConnection: true,
-                        ShouldBreakRelay: false,
-                        BytesWritten: bytesWritten);
+                    return CreateBufferProcessingTerminateResult(bytesWritten);
                 }
 
                 bytesWritten += transformedBytes;
@@ -228,10 +219,7 @@ public sealed partial class WorldProxyListener
         FlushResult flushResult = await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
         if (flushResult.IsCanceled || flushResult.IsCompleted)
         {
-            return new ProxyLoopBufferProcessingResult(
-                ShouldTerminateConnection: false,
-                ShouldBreakRelay: true,
-                BytesWritten: bytesWritten);
+            return CreateBufferProcessingBreakRelayResult(bytesWritten);
         }
 
         if (direction == "client->world" && bridgeState.ConsumeClientRequestedDisconnect())
@@ -240,10 +228,7 @@ public sealed partial class WorldProxyListener
                 "[WorldProxy][MAP] Client requested world disconnect. ConnectionId={ConnectionId}, Direction={Direction}. Ending relay side.",
                 connectionId,
                 direction);
-            return new ProxyLoopBufferProcessingResult(
-                ShouldTerminateConnection: false,
-                ShouldBreakRelay: true,
-                BytesWritten: bytesWritten);
+            return CreateBufferProcessingBreakRelayResult(bytesWritten);
         }
 
         AckGateDeferredFlushResult ackGateResult = await TryHandleAckGateAndDeferredFlushAsync(
@@ -256,23 +241,14 @@ public sealed partial class WorldProxyListener
         bytesWritten += ackGateResult.BytesWritten;
         if (ackGateResult.ShouldTerminateConnection)
         {
-            return new ProxyLoopBufferProcessingResult(
-                ShouldTerminateConnection: true,
-                ShouldBreakRelay: false,
-                BytesWritten: bytesWritten);
+            return CreateBufferProcessingTerminateResult(bytesWritten);
         }
 
         if (ackGateResult.ShouldBreakRelay)
         {
-            return new ProxyLoopBufferProcessingResult(
-                ShouldTerminateConnection: false,
-                ShouldBreakRelay: true,
-                BytesWritten: bytesWritten);
+            return CreateBufferProcessingBreakRelayResult(bytesWritten);
         }
 
-        return new ProxyLoopBufferProcessingResult(
-            ShouldTerminateConnection: false,
-            ShouldBreakRelay: false,
-            BytesWritten: bytesWritten);
+        return CreateBufferProcessingContinueResult(bytesWritten);
     }
 }
