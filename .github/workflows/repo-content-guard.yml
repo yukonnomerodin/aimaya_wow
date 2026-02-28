@@ -1,0 +1,37 @@
+name: Repo Content Guard
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  guard:
+    name: Guard local-only content rules
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate tracked file policy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          forbidden_docs="$(git ls-files | grep -E '^(docs/|src/.*\.md$)' || true)"
+          forbidden_pfx="$(git ls-files | grep -E '\.pfx$' || true)"
+
+          if [[ -n "$forbidden_docs" ]]; then
+            echo "Forbidden tracked documentation detected (local-only policy):"
+            echo "$forbidden_docs"
+            exit 1
+          fi
+
+          if [[ -n "$forbidden_pfx" ]]; then
+            echo "Forbidden tracked certificate files detected:"
+            echo "$forbidden_pfx"
+            exit 1
+          fi
+
+          echo "Repo content guard passed."
