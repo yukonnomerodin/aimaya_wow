@@ -6,10 +6,6 @@ namespace Adapter.WorldGateway;
 
 public sealed partial class WorldProxyListener
 {
-    private readonly record struct ProxyBufferAuthBridgeAndTransformStageResult(
-        bool ShouldTerminateConnection,
-        long BytesWritten);
-
     private async ValueTask<ProxyBufferAuthBridgeAndTransformStageResult> TryRunProxyBufferAuthBridgeAndTransformStageAsync(
         uint connectionId,
         string direction,

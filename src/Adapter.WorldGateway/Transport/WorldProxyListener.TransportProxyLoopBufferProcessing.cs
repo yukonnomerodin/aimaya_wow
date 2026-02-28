@@ -5,11 +5,6 @@ namespace Adapter.WorldGateway;
 
 public sealed partial class WorldProxyListener
 {
-    private readonly record struct ProxyLoopBufferProcessingResult(
-        bool ShouldTerminateConnection,
-        bool ShouldBreakRelay,
-        long BytesWritten);
-
     private sealed class TransportProxyLoopState
     {
         public bool FirstChunkDumped { get; set; }

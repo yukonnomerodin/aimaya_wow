@@ -5,11 +5,6 @@ namespace Adapter.WorldGateway;
 
 public sealed partial class WorldProxyListener
 {
-    private readonly record struct ProxyLoopReadResultProcessingResult(
-        bool ShouldTerminateConnection,
-        bool ShouldBreakRelay,
-        long BytesWritten);
-
     private async ValueTask<ProxyLoopReadResultProcessingResult> TryHandleProxyLoopReadResultLifecycleAsync(
         uint connectionId,
         string direction,
