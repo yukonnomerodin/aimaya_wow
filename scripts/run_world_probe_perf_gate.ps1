@@ -13,6 +13,7 @@ param(
     [int]$ProbePostAckReadFrames = 8,
     [int]$ProbePostAckReadTimeoutMs = 250,
     [int]$ProbePostAckWaitMs = 100,
+    [int]$RetryOnSocketClosedCount = 1,
     [int]$P50GateMs = 0,
     [int]$P95GateMs = 0,
     [int]$MaxDurationGateMs = 0,
@@ -135,31 +136,52 @@ try {
                     [int]$ReadTimeoutMs,
                     [int]$PostAckReadFrames,
                     [int]$PostAckReadTimeoutMs,
-                    [int]$PostAckWaitMs
+                    [int]$PostAckWaitMs,
+                    [int]$RetryOnSocketClosedCount
                 )
 
                 Set-StrictMode -Version Latest
                 $ErrorActionPreference = "Stop"
 
-                $probeOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File $ResolvedProbeScript `
-                    -ServerHost $ServerHost `
-                    -Port $Port `
-                    -AccountId $AccountId `
-                    -ConnectTimeoutMs $ConnectTimeoutMs `
-                    -ReadTimeoutMs $ReadTimeoutMs `
-                    -PostAckReadFrames $PostAckReadFrames `
-                    -PostAckReadTimeoutMs $PostAckReadTimeoutMs `
-                    -PostAckWaitMs $PostAckWaitMs
+                $maxProbeAttempts = 1 + [Math]::Max(0, $RetryOnSocketClosedCount)
+                $lastProbeError = $null
+                for ($probeAttempt = 1; $probeAttempt -le $maxProbeAttempts; $probeAttempt++) {
+                    try {
+                        $probeOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File $ResolvedProbeScript `
+                            -ServerHost $ServerHost `
+                            -Port $Port `
+                            -AccountId $AccountId `
+                            -ConnectTimeoutMs $ConnectTimeoutMs `
+                            -ReadTimeoutMs $ReadTimeoutMs `
+                            -PostAckReadFrames $PostAckReadFrames `
+                            -PostAckReadTimeoutMs $PostAckReadTimeoutMs `
+                            -PostAckWaitMs $PostAckWaitMs
 
-                $probeJson = ($probeOutput -join "`n") | ConvertFrom-Json
-                $postAckOpcodes = @($probeJson.post_ack_observed_opcodes)
-                [PSCustomObject]@{
-                    attempt_id = $AttemptId
-                    duration_ms = [double]$probeJson.duration_ms
-                    ack_sent = [bool]$probeJson.ack_sent
-                    enter_encrypted_seen = [bool]$probeJson.enter_encrypted_seen
-                    post_ack_opcode_count = $postAckOpcodes.Count
+                        $probeJson = ($probeOutput -join "`n") | ConvertFrom-Json
+                        $postAckOpcodes = @($probeJson.post_ack_observed_opcodes)
+                        return [PSCustomObject]@{
+                            attempt_id = $AttemptId
+                            duration_ms = [double]$probeJson.duration_ms
+                            ack_sent = [bool]$probeJson.ack_sent
+                            enter_encrypted_seen = [bool]$probeJson.enter_encrypted_seen
+                            post_ack_opcode_count = $postAckOpcodes.Count
+                            probe_retry_count = $probeAttempt - 1
+                        }
+                    }
+                    catch {
+                        $lastProbeError = $_.Exception.Message
+                        $normalized = $lastProbeError.ToLowerInvariant()
+                        $isSocketClosedTransient = $normalized.Contains("socket closed while reading")
+                        if ($isSocketClosedTransient -and $probeAttempt -lt $maxProbeAttempts) {
+                            Start-Sleep -Milliseconds 40
+                            continue
+                        }
+
+                        throw
+                    }
                 }
+
+                throw "Probe failed after $maxProbeAttempts attempts. LastError=$lastProbeError"
             } -ArgumentList @(
                 $localAttemptId,
                 $resolvedProbeScript,
@@ -170,7 +192,8 @@ try {
                 $ProbeReadTimeoutMs,
                 $ProbePostAckReadFrames,
                 $ProbePostAckReadTimeoutMs,
-                $ProbePostAckWaitMs
+                $ProbePostAckWaitMs,
+                $RetryOnSocketClosedCount
             )
 
             $runningJobs.Add($job) | Out-Null
@@ -213,6 +236,7 @@ try {
                     ack_sent = [bool]$jobResult.ack_sent
                     enter_encrypted_seen = [bool]$jobResult.enter_encrypted_seen
                     post_ack_opcode_count = [int]$jobResult.post_ack_opcode_count
+                    probe_retry_count = [int]$jobResult.probe_retry_count
                 }) | Out-Null
         }
         catch {
@@ -311,6 +335,7 @@ $summary = [ordered]@{
     target_iterations = $targetSuccessCount
     parallelism = $Parallelism
     allow_failures = $AllowFailures
+    retry_on_socket_closed_count = $RetryOnSocketClosedCount
     attempts_total = $attemptId
     successful_iterations = $successCount
     failed_attempts = $failureCount

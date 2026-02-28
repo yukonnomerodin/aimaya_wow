@@ -15,6 +15,11 @@ public sealed partial class WorldProxyListener
         bool DrainCompleted,
         long DrainElapsedMs,
         string Details);
+    private readonly record struct RelayHalfCloseDrainOutcome(
+        bool DrainAttempted,
+        bool DrainCompleted,
+        long DrainElapsedMs,
+        string Details);
 
     private async ValueTask<(long ClientToWorld, long WorldToClient)> RunRelayLoopAsync(
         uint connectionId,
@@ -69,9 +74,12 @@ public sealed partial class WorldProxyListener
         try
         {
             Task completed = await Task.WhenAny(downstreamToUpstream, upstreamToDownstream).ConfigureAwait(false);
-            string firstCompletedDirection = ReferenceEquals(completed, downstreamToUpstream)
+            bool firstIsClientToWorld = ReferenceEquals(completed, downstreamToUpstream);
+            string firstCompletedDirection = firstIsClientToWorld
                 ? "client->world"
                 : "world->client";
+            Task<long> firstCompletedRelay = firstIsClientToWorld ? downstreamToUpstream : upstreamToDownstream;
+            Task<long> siblingRelay = firstIsClientToWorld ? upstreamToDownstream : downstreamToUpstream;
             string firstCompletedStatus = completed.IsFaulted
                 ? "faulted"
                 : completed.IsCanceled
@@ -84,7 +92,19 @@ public sealed partial class WorldProxyListener
                 firstCompletedDirection,
                 firstCompletedStatus,
                 firstCompletedError);
-            relayCts.Cancel();
+
+            RelayHalfCloseDrainOutcome halfCloseDrainOutcome = await TryDrainSiblingRelayOnHalfCloseAsync(
+                    connectionId,
+                    bridgeState,
+                    firstCompletedDirection,
+                    firstCompletedRelay,
+                    siblingRelay,
+                    relayCts.Token)
+                .ConfigureAwait(false);
+            if (!halfCloseDrainOutcome.DrainCompleted)
+            {
+                relayCts.Cancel();
+            }
 
             try
             {
@@ -155,6 +175,65 @@ public sealed partial class WorldProxyListener
         }
 
         return (transferredClientToWorld, transferredWorldToClient);
+    }
+
+    private async ValueTask<RelayHalfCloseDrainOutcome> TryDrainSiblingRelayOnHalfCloseAsync(
+        uint connectionId,
+        WorldProxyBridgeState bridgeState,
+        string firstCompletedDirection,
+        Task<long> firstCompletedRelay,
+        Task<long> siblingRelay,
+        CancellationToken relayToken)
+    {
+        if (!firstCompletedRelay.IsCompletedSuccessfully)
+        {
+            return new RelayHalfCloseDrainOutcome(
+                DrainAttempted: false,
+                DrainCompleted: false,
+                DrainElapsedMs: 0,
+                Details: "first_relay_not_successful");
+        }
+
+        if (_relayFailureRecoveryPolicy != RelayFailureRecoveryPolicy.CancelSiblingDrainAndClose ||
+            _options.RelayFailureDrainTimeoutMs <= 0)
+        {
+            return new RelayHalfCloseDrainOutcome(
+                DrainAttempted: false,
+                DrainCompleted: false,
+                DrainElapsedMs: 0,
+                Details: "drain_disabled");
+        }
+
+        long drainStartMs = Environment.TickCount64;
+        Task completed = await Task.WhenAny(
+                siblingRelay,
+                Task.Delay(_options.RelayFailureDrainTimeoutMs, relayToken))
+            .ConfigureAwait(false);
+        long drainElapsedMs = Math.Max(0, Environment.TickCount64 - drainStartMs);
+        bool drainCompleted = ReferenceEquals(completed, siblingRelay);
+        string details = drainCompleted
+            ? $"sibling_completed;timeout_ms={_options.RelayFailureDrainTimeoutMs}"
+            : $"sibling_timeout;timeout_ms={_options.RelayFailureDrainTimeoutMs}";
+
+        bridgeState.MarkTemporalInvariant(
+            name: "relay_half_close_sibling_drain",
+            passed: drainCompleted,
+            expected: "after first successful relay completion, sibling should drain within configured timeout before cancellation",
+            actual: $"first_direction={firstCompletedDirection};elapsed_ms={drainElapsedMs};{details}");
+
+        _logger.LogInformation(
+            "[WorldProxy][L4] Half-close sibling drain. ConnectionId={ConnectionId}, FirstDirection={FirstDirection}, DrainCompleted={DrainCompleted}, DrainElapsedMs={DrainElapsedMs}, Details={Details}",
+            connectionId,
+            firstCompletedDirection,
+            drainCompleted,
+            drainElapsedMs,
+            details);
+
+        return new RelayHalfCloseDrainOutcome(
+            DrainAttempted: true,
+            DrainCompleted: drainCompleted,
+            DrainElapsedMs: drainElapsedMs,
+            Details: details);
     }
 
     private async ValueTask<RelayFailureRecoveryOutcome> ApplyRelayFailureRecoveryPolicyAsync(

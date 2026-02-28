@@ -6,6 +6,8 @@ namespace Adapter.WorldGateway;
 
 internal static class HandshakeDiagnosticsWriters
 {
+    private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
+
     public static ProofPackArtifacts WriteEnterEncryptedProofPack(
         uint connectionId,
         WorldProxyOptions options,
@@ -50,7 +52,7 @@ internal static class HandshakeDiagnosticsWriters
 
         File.WriteAllText(
             jsonPath,
-            JsonSerializer.Serialize(metadata, new JsonSerializerOptions { WriteIndented = true }),
+            JsonSerializer.Serialize(metadata, IndentedJsonOptions),
             Encoding.UTF8);
 
         string diffSummary = BuildEnterEncryptedFixtureDiffSummary(options, proof, runlogsDir, projectRoot);
@@ -304,7 +306,7 @@ internal static class HandshakeDiagnosticsWriters
 
         File.WriteAllText(
             jsonPath,
-            JsonSerializer.Serialize(metadata, new JsonSerializerOptions { WriteIndented = true }),
+            JsonSerializer.Serialize(metadata, IndentedJsonOptions),
             Encoding.UTF8);
 
         return new AuthChallengeProofArtifacts(hexPath, jsonPath);
@@ -392,7 +394,7 @@ internal static class HandshakeDiagnosticsWriters
 
         File.WriteAllText(
             reportPath,
-            JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }),
+            JsonSerializer.Serialize(payload, IndentedJsonOptions),
             Encoding.UTF8);
         return reportPath;
     }
@@ -449,7 +451,7 @@ internal static class HandshakeDiagnosticsWriters
             nextIsolationVariable
         ];
 
-        string line = string.Join(",", columns.Select(EscapeCsv));
+        string line = BuildCsvLine(columns);
         File.AppendAllText(matrixPath, line + Environment.NewLine, Encoding.UTF8);
     }
 
@@ -486,6 +488,24 @@ internal static class HandshakeDiagnosticsWriters
         }
 
         return "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    private static string BuildCsvLine(string[] columns)
+    {
+        if (columns.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(capacity: 256);
+        builder.Append(EscapeCsv(columns[0]));
+        for (int idx = 1; idx < columns.Length; idx++)
+        {
+            builder.Append(',');
+            builder.Append(EscapeCsv(columns[idx]));
+        }
+
+        return builder.ToString();
     }
 
     private static string BuildEnterEncryptedFixtureDiffSummary(

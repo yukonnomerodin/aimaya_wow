@@ -1,0 +1,59 @@
+name: WorldGateway Soak Baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      hypothesis_id:
+        description: "HypothesisId used for gateway start and summary metadata"
+        required: false
+        default: "M2-R6-TRANSPORT-STATE-DIAG-SOAK-109"
+      rounds:
+        description: "Soak benchmark rounds"
+        required: true
+        default: "8"
+      iterations_per_profile:
+        description: "Scale iterations per profile"
+        required: true
+        default: "24"
+      perf_iterations:
+        description: "Perf gate successful iterations"
+        required: true
+        default: "60"
+      perf_parallelism:
+        description: "Perf gate parallelism"
+        required: true
+        default: "4"
+
+jobs:
+  soak-baseline:
+    name: Soak Baseline (Self-Hosted Windows)
+    runs-on: [self-hosted, windows]
+    env:
+      SOAK_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-TRANSPORT-STATE-DIAG-SOAK-109' }}
+      SOAK_ROUNDS: ${{ github.event.inputs.rounds || '8' }}
+      SOAK_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '24' }}
+      SOAK_PERF_ITERATIONS: ${{ github.event.inputs.perf_iterations || '60' }}
+      SOAK_PERF_PARALLELISM: ${{ github.event.inputs.perf_parallelism || '4' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build WorldGateway
+        shell: powershell
+        run: dotnet build src/Adapter.WorldGateway/Adapter.WorldGateway.csproj
+
+      - name: Run Soak Baseline
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_world_probe_soak_baseline.ps1 `
+            -HypothesisId "${{ env.SOAK_HYPOTHESIS_ID }}" `
+            -Rounds ${{ env.SOAK_ROUNDS }} `
+            -IterationsPerProfile ${{ env.SOAK_ITERATIONS_PER_PROFILE }} `
+            -PerfIterations ${{ env.SOAK_PERF_ITERATIONS }} `
+            -PerfParallelism ${{ env.SOAK_PERF_PARALLELISM }}

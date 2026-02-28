@@ -10,6 +10,7 @@ scripts/*
 !scripts/run_world_probe_runtime_error_budget_gate.ps1
 !scripts/run_world_probe_scale_profiles.ps1
 !scripts/run_world_probe_capacity_benchmark.ps1
+!scripts/run_world_probe_soak_baseline.ps1
 !scripts/start_retail_gateways.ps1
 
 # Build artifacts
