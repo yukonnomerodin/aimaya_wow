@@ -11,35 +11,21 @@ public sealed partial class WorldProxyListener
         bool shouldFlushDeferredNow,
         CancellationToken cancellationToken)
     {
-        long bytesWritten = 0;
         if (!TryTakeAckGateDeferredPayload(
                 bridgeState,
                 shouldFlushDeferredNow,
                 out AckGateDeferredPayload deferredPayload))
         {
-            return CreateAckGateContinueResult(bytesWritten);
+            return CreateAckGateContinueResult(bytesWritten: 0);
         }
 
-        DeferredBootstrapFlushResult deferredFlushResult = await TryFlushDeferredBootstrapPayloadAsync(
+        return await DispatchAckGateDeferredFlushAsync(
                 connectionId,
                 writer,
                 bridgeState,
-                deferredPayload.Payload,
-                deferredPayload.StagedOpcodes,
+                deferredPayload,
                 cancellationToken)
             .ConfigureAwait(false);
-        bytesWritten += deferredFlushResult.BytesWritten;
-        if (deferredFlushResult.ShouldTerminateConnection)
-        {
-            return CreateAckGateTerminateResult(bytesWritten);
-        }
-
-        if (deferredFlushResult.ShouldBreakRelay)
-        {
-            return CreateAckGateBreakRelayResult(bytesWritten);
-        }
-
-        return CreateAckGateContinueResult(bytesWritten);
     }
 
     private static AckGateDeferredFlushResult CreateAckGateTerminateResult(long bytesWritten) =>
