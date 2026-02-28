@@ -18,6 +18,9 @@ param(
     [int]$P95GateMs = 0,
     [int]$MaxDurationGateMs = 0,
     [double]$MaxFailureRatePercent = -1,
+    [int]$MaxSocketClosedFailures = -1,
+    [double]$MaxSocketClosedFailureRatePercent = -1,
+    [string]$SocketClosedFailureStageBudgets = "",
     [switch]$AutoStartGateways,
     [string]$HypothesisId = "",
     [string]$SummaryPath = "docs/handshake/runlogs/probe_perf_gate.latest.json"
@@ -78,9 +81,89 @@ function Resolve-FailureBucketName {
     return "other"
 }
 
+function Resolve-FailureStageName {
+    param([string]$ErrorText)
+
+    if ([string]::IsNullOrWhiteSpace($ErrorText)) {
+        return "unknown"
+    }
+
+    $match = [System.Text.RegularExpressions.Regex]::Match(
+        $ErrorText,
+        "probe_stage=([a-z0-9_]+)",
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($match.Success) {
+        return $match.Groups[1].Value.ToLowerInvariant()
+    }
+
+    $normalized = $ErrorText.ToLowerInvariant()
+    if ($normalized.Contains("connect timeout") -or $normalized.Contains("endconnect")) {
+        return "connect"
+    }
+
+    if ($normalized.Contains("unexpected server initializer")) {
+        return "server_initializer"
+    }
+
+    if ($normalized.Contains("smsg_auth_challenge")) {
+        return "await_auth_challenge"
+    }
+
+    if ($normalized.Contains("smsg_enter_encrypted_mode")) {
+        return "await_enter_encrypted"
+    }
+
+    if ($normalized.Contains("post_ack")) {
+        return "post_ack_read"
+    }
+
+    if ($normalized.Contains("socket closed")) {
+        return "unknown_socket_stage"
+    }
+
+    return "unknown"
+}
+
+function Parse-SocketClosedFailureStageBudgets {
+    param([string]$BudgetCsv)
+
+    $budgetMap = @{}
+    if ([string]::IsNullOrWhiteSpace($BudgetCsv)) {
+        return $budgetMap
+    }
+
+    $tokens = $BudgetCsv.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries)
+    foreach ($token in $tokens) {
+        $entry = $token.Trim()
+        if ([string]::IsNullOrWhiteSpace($entry)) {
+            continue
+        }
+
+        $parts = $entry.Split(':', 2, [System.StringSplitOptions]::RemoveEmptyEntries)
+        if ($parts.Length -ne 2) {
+            throw "Invalid SocketClosedFailureStageBudgets entry '$entry'. Expected format: stage:count."
+        }
+
+        $stageName = $parts[0].Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($stageName)) {
+            throw "Invalid SocketClosedFailureStageBudgets entry '$entry'. Stage must be non-empty."
+        }
+
+        $budgetCount = [int]$parts[1].Trim()
+        if ($budgetCount -lt 0) {
+            throw "Invalid SocketClosedFailureStageBudgets entry '$entry'. Count must be >= 0."
+        }
+
+        $budgetMap[$stageName] = $budgetCount
+    }
+
+    return $budgetMap
+}
+
 if ($Iterations -le 0) { throw "Iterations must be > 0." }
 if ($Parallelism -le 0) { throw "Parallelism must be > 0." }
 if ($AllowFailures -lt 0) { throw "AllowFailures must be >= 0." }
+$socketClosedStageBudgetMap = Parse-SocketClosedFailureStageBudgets -BudgetCsv $SocketClosedFailureStageBudgets
 
 $resolvedProbeScript = Resolve-RepoPath -PathValue $ProbeScriptPath
 if (-not (Test-Path $resolvedProbeScript)) {
@@ -241,9 +324,14 @@ try {
         }
         catch {
             $jobAttemptId = if ($completedJob.Name -match '^probe-(\d+)$') { [int]$Matches[1] } else { $attemptId }
+            $errorText = [string]$_.Exception.Message
+            $failureBucket = Resolve-FailureBucketName -ErrorText $errorText
+            $failureStage = Resolve-FailureStageName -ErrorText $errorText
             $failureRows.Add([PSCustomObject]@{
                     attempt_id = $jobAttemptId
-                    error = $_.Exception.Message
+                    error = $errorText
+                    failure_bucket = $failureBucket
+                    failure_stage = $failureStage
                 }) | Out-Null
         }
         finally {
@@ -317,15 +405,77 @@ if (($MaxDurationGateMs -gt 0) -and ($null -ne $max) -and ($max -gt $MaxDuration
 $gateReasonArray = [string[]]$gateReasons.ToArray()
 $failureArray = [object[]]$failureRows.ToArray()
 $failureBucketCounts = @{}
+$failureStageCounts = @{}
+$socketClosedFailureStageCounts = @{}
+$socketClosedFailures = 0
 foreach ($failure in $failureRows) {
-    $bucket = Resolve-FailureBucketName -ErrorText ([string]$failure.error)
+    $bucket = [string]$failure.failure_bucket
+    if ([string]::IsNullOrWhiteSpace($bucket)) {
+        $bucket = Resolve-FailureBucketName -ErrorText ([string]$failure.error)
+    }
+
+    $stage = [string]$failure.failure_stage
+    if ([string]::IsNullOrWhiteSpace($stage)) {
+        $stage = Resolve-FailureStageName -ErrorText ([string]$failure.error)
+    }
+
+    $bucket = $bucket.ToLowerInvariant()
+    $stage = $stage.ToLowerInvariant()
     if (-not $failureBucketCounts.ContainsKey($bucket)) {
         $failureBucketCounts[$bucket] = 0
     }
 
     $failureBucketCounts[$bucket]++
+
+    if (-not $failureStageCounts.ContainsKey($stage)) {
+        $failureStageCounts[$stage] = 0
+    }
+
+    $failureStageCounts[$stage]++
+
+    if ([string]::Equals($bucket, "socket_closed_during_read", [System.StringComparison]::Ordinal)) {
+        $socketClosedFailures++
+        if (-not $socketClosedFailureStageCounts.ContainsKey($stage)) {
+            $socketClosedFailureStageCounts[$stage] = 0
+        }
+
+        $socketClosedFailureStageCounts[$stage]++
+    }
 }
 
+$socketClosedFailureRatePercent = if ($attemptsTotal -gt 0) {
+    [double][Math]::Round(($socketClosedFailures * 100.0) / $attemptsTotal, 3)
+}
+else {
+    0.0
+}
+
+if (($MaxSocketClosedFailures -ge 0) -and ($socketClosedFailures -gt $MaxSocketClosedFailures)) {
+    $gatePassed = $false
+    $gateReasons.Add("socket_closed_count_gate_failed: gate_count=$MaxSocketClosedFailures actual_count=$socketClosedFailures") | Out-Null
+}
+
+if (($MaxSocketClosedFailureRatePercent -ge 0) -and ($socketClosedFailureRatePercent -gt $MaxSocketClosedFailureRatePercent)) {
+    $gatePassed = $false
+    $gateReasons.Add("socket_closed_failure_rate_gate_failed: gate_pct=$MaxSocketClosedFailureRatePercent actual_pct=$socketClosedFailureRatePercent") | Out-Null
+}
+
+foreach ($stageName in $socketClosedStageBudgetMap.Keys) {
+    $budgetCount = [int]$socketClosedStageBudgetMap[$stageName]
+    $actualCount = if ($socketClosedFailureStageCounts.ContainsKey($stageName)) {
+        [int]$socketClosedFailureStageCounts[$stageName]
+    }
+    else {
+        0
+    }
+
+    if ($actualCount -gt $budgetCount) {
+        $gatePassed = $false
+        $gateReasons.Add("socket_closed_stage_budget_gate_failed: stage=$stageName gate_count=$budgetCount actual_count=$actualCount") | Out-Null
+    }
+}
+
+$gateReasonArray = [string[]]$gateReasons.ToArray()
 $summary = [ordered]@{
     timestamp_utc = [DateTimeOffset]::UtcNow.ToString("o")
     server_host = $ServerHost
@@ -336,10 +486,15 @@ $summary = [ordered]@{
     parallelism = $Parallelism
     allow_failures = $AllowFailures
     retry_on_socket_closed_count = $RetryOnSocketClosedCount
+    max_socket_closed_failures_gate = $MaxSocketClosedFailures
+    max_socket_closed_failure_rate_percent_gate = $MaxSocketClosedFailureRatePercent
+    socket_closed_failure_stage_budgets = $socketClosedStageBudgetMap
     attempts_total = $attemptId
     successful_iterations = $successCount
     failed_attempts = $failureCount
     failure_rate_percent = $failureRatePercent
+    socket_closed_failures = $socketClosedFailures
+    socket_closed_failure_rate_percent = $socketClosedFailureRatePercent
     min_ms = $min
     p50_ms = $p50
     p95_ms = $p95
@@ -349,6 +504,8 @@ $summary = [ordered]@{
     gate_passed = $gatePassed
     gate_reasons = $gateReasonArray
     failure_buckets = $failureBucketCounts
+    failure_stages = $failureStageCounts
+    socket_closed_failure_stages = $socketClosedFailureStageCounts
     failures = $failureArray
     duration_total_ms = [Math]::Max(0, [int]($finishedAt - $startedAt).TotalMilliseconds)
 }

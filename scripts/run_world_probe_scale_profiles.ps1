@@ -46,9 +46,9 @@ function Resolve-RepoPath {
 function Resolve-ProfileList {
     param([string]$ProfilesCsv)
 
-    $profiles = $ProfilesCsv.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) |
+    $profiles = @($ProfilesCsv.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) |
         ForEach-Object { [int]$_.Trim() } |
-        Select-Object -Unique
+        Select-Object -Unique)
 
     if ($profiles.Count -eq 0) {
         throw "Profiles list is empty."
@@ -59,6 +59,25 @@ function Resolve-ProfileList {
     }
 
     return [int[]]$profiles
+}
+
+function Get-NumberOrDefault {
+    param(
+        [object]$InputObject,
+        [string]$PropertyName,
+        [double]$DefaultValue = 0
+    )
+
+    if ($null -eq $InputObject) {
+        return $DefaultValue
+    }
+
+    $prop = $InputObject.PSObject.Properties | Where-Object { $_.Name -eq $PropertyName } | Select-Object -First 1
+    if ($null -eq $prop -or $null -eq $prop.Value) {
+        return $DefaultValue
+    }
+
+    return [double]$prop.Value
 }
 
 function Get-GatesForParallelism {
@@ -165,6 +184,17 @@ foreach ($parallelism in $profileList) {
     $exitCode = $LASTEXITCODE
     $jsonText = ($raw -join "`n")
     $summary = $jsonText | ConvertFrom-Json
+    $socketClosedFailures = [int](Get-NumberOrDefault -InputObject $summary -PropertyName "socket_closed_failures" -DefaultValue 0)
+    $socketClosedFailureRate = Get-NumberOrDefault -InputObject $summary -PropertyName "socket_closed_failure_rate_percent" -DefaultValue -1
+    if ($socketClosedFailureRate -lt 0) {
+        $attemptsTotal = [int](Get-NumberOrDefault -InputObject $summary -PropertyName "attempts_total" -DefaultValue 0)
+        if ($attemptsTotal -gt 0) {
+            $socketClosedFailureRate = [double][Math]::Round(($socketClosedFailures * 100.0) / $attemptsTotal, 3)
+        }
+        else {
+            $socketClosedFailureRate = 0.0
+        }
+    }
 
     $profilePass = ($exitCode -eq 0) -and [bool]$summary.gate_passed
     if (-not $profilePass) {
@@ -182,6 +212,10 @@ foreach ($parallelism in $profileList) {
             successful_iterations = [int]$summary.successful_iterations
             failed_attempts = [int]$summary.failed_attempts
             failure_rate_percent = [double]$summary.failure_rate_percent
+            socket_closed_failures = $socketClosedFailures
+            socket_closed_failure_rate_percent = [double][Math]::Round($socketClosedFailureRate, 3)
+            socket_closed_failure_stages = $summary.socket_closed_failure_stages
+            failure_stages = $summary.failure_stages
             p50_ms = [double]$summary.p50_ms
             p95_ms = [double]$summary.p95_ms
             max_ms = [double]$summary.max_ms
@@ -198,7 +232,7 @@ $output = [PSCustomObject]@{
     iterations_per_profile = $IterationsPerProfile
     allow_failures_per_profile = $AllowFailuresPerProfile
     allow_failures_mode = if ($AllowFailuresPerProfile -ge 0) { "explicit" } else { "auto_from_failure_rate_gate" }
-    profiles = $profileList
+    profiles = @($profileList)
     overall_pass = $globalPass
     duration_total_ms = [Math]::Max(0, [int]($finishedAt - $startedAt).TotalMilliseconds)
     results = $results

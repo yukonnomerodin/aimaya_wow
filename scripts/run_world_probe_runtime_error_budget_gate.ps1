@@ -6,6 +6,9 @@ param(
     [string]$HypothesisId = "",
     [double]$MaxRelayFailureRatePercent = 8.0,
     [string]$ScaleProfileRelayFailureRateBudgets = "1:8,4:10,8:15,16:24,32:28",
+    [double]$MaxSocketClosedFailureRatePercent = -1,
+    [string]$ScaleProfileSocketClosedFailureRateBudgets = "",
+    [string]$SocketClosedStageFailureRateBudgets = "",
     [double]$MaxDbTimeoutRatePercent = 0.5,
     [double]$MaxDiagnosticsQueueSaturationRatePercent = 1.0,
     [int]$MinReportSampleSize = 12
@@ -98,6 +101,42 @@ function Get-RelayFailureRateFromPerfSummary {
     return [double][Math]::Round(($failed * 100.0) / $attempts, 3)
 }
 
+function Get-SocketClosedFailureRateFromPerfSummary {
+    param([object]$PerfSummary)
+
+    if ($null -eq $PerfSummary) {
+        return $null
+    }
+
+    $rate = Get-NumberOrDefault -InputObject $PerfSummary -PropertyName "socket_closed_failure_rate_percent" -DefaultValue -1
+    if ($rate -ge 0) {
+        return [double]$rate
+    }
+
+    $socketClosedFailures = Get-NumberOrDefault -InputObject $PerfSummary -PropertyName "socket_closed_failures" -DefaultValue -1
+    $attempts = Get-NumberOrDefault -InputObject $PerfSummary -PropertyName "attempts_total" -DefaultValue 0
+    if ($socketClosedFailures -ge 0 -and $attempts -gt 0) {
+        return [double][Math]::Round(($socketClosedFailures * 100.0) / $attempts, 3)
+    }
+
+    $failureBucketsProp = $PerfSummary.PSObject.Properties | Where-Object { $_.Name -eq "failure_buckets" } | Select-Object -First 1
+    if ($null -eq $failureBucketsProp -or $null -eq $failureBucketsProp.Value) {
+        return 0.0
+    }
+
+    $socketClosedBucketValue = $failureBucketsProp.Value.PSObject.Properties | Where-Object { $_.Name -eq "socket_closed_during_read" } | Select-Object -First 1
+    if ($null -eq $socketClosedBucketValue -or $null -eq $socketClosedBucketValue.Value) {
+        return 0.0
+    }
+
+    $socketClosedFailures = [double]$socketClosedBucketValue.Value
+    if ($attempts -le 0) {
+        return 0.0
+    }
+
+    return [double][Math]::Round(($socketClosedFailures * 100.0) / $attempts, 3)
+}
+
 function Parse-ScaleProfileRelayFailureRateBudgets {
     param([string]$BudgetCsv)
 
@@ -132,6 +171,120 @@ function Parse-ScaleProfileRelayFailureRateBudgets {
     }
 
     return $budgetMap
+}
+
+function Parse-ScaleProfileSocketClosedFailureRateBudgets {
+    param([string]$BudgetCsv)
+
+    $budgetMap = @{}
+    if ([string]::IsNullOrWhiteSpace($BudgetCsv)) {
+        return $budgetMap
+    }
+
+    $tokens = $BudgetCsv.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries)
+    foreach ($token in $tokens) {
+        $entry = $token.Trim()
+        if ([string]::IsNullOrWhiteSpace($entry)) {
+            continue
+        }
+
+        $parts = $entry.Split(':', 2, [System.StringSplitOptions]::RemoveEmptyEntries)
+        if ($parts.Length -ne 2) {
+            throw "Invalid ScaleProfileSocketClosedFailureRateBudgets entry '$entry'. Expected format: parallelism:percent."
+        }
+
+        $parallelism = [int]$parts[0].Trim()
+        $budgetPercent = [double]$parts[1].Trim()
+        if ($parallelism -le 0) {
+            throw "Invalid profile parallelism in ScaleProfileSocketClosedFailureRateBudgets entry '$entry'."
+        }
+
+        if ($budgetPercent -lt 0) {
+            throw "Invalid socket-closed failure-rate budget in ScaleProfileSocketClosedFailureRateBudgets entry '$entry'. Must be >= 0."
+        }
+
+        $budgetMap[$parallelism] = $budgetPercent
+    }
+
+    return $budgetMap
+}
+
+function Parse-SocketClosedStageFailureRateBudgets {
+    param([string]$BudgetCsv)
+
+    $budgetMap = @{}
+    if ([string]::IsNullOrWhiteSpace($BudgetCsv)) {
+        return $budgetMap
+    }
+
+    $tokens = $BudgetCsv.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries)
+    foreach ($token in $tokens) {
+        $entry = $token.Trim()
+        if ([string]::IsNullOrWhiteSpace($entry)) {
+            continue
+        }
+
+        $parts = $entry.Split(':', 2, [System.StringSplitOptions]::RemoveEmptyEntries)
+        if ($parts.Length -ne 2) {
+            throw "Invalid SocketClosedStageFailureRateBudgets entry '$entry'. Expected format: stage:percent."
+        }
+
+        $stageName = $parts[0].Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($stageName)) {
+            throw "Invalid SocketClosedStageFailureRateBudgets entry '$entry'. Stage must be non-empty."
+        }
+
+        $budgetPercent = [double]$parts[1].Trim()
+        if ($budgetPercent -lt 0) {
+            throw "Invalid SocketClosedStageFailureRateBudgets entry '$entry'. Percent must be >= 0."
+        }
+
+        $budgetMap[$stageName] = $budgetPercent
+    }
+
+    return $budgetMap
+}
+
+function Get-SocketClosedStageRateSnapshotFromPerfSummary {
+    param([object]$PerfSummary)
+
+    if ($null -eq $PerfSummary) {
+        return [PSCustomObject]@{
+            counts = @{}
+            rates_percent = @{}
+            attempts_total = 0
+        }
+    }
+
+    $attempts = [int](Get-NumberOrDefault -InputObject $PerfSummary -PropertyName "attempts_total" -DefaultValue 0)
+    $counts = @{}
+    $rates = @{}
+
+    $stagesProp = $PerfSummary.PSObject.Properties | Where-Object { $_.Name -eq "socket_closed_failure_stages" } | Select-Object -First 1
+    if ($null -ne $stagesProp -and $null -ne $stagesProp.Value) {
+        foreach ($stageProp in $stagesProp.Value.PSObject.Properties) {
+            $stageName = [string]$stageProp.Name
+            $count = [double]$stageProp.Value
+            if ([string]::IsNullOrWhiteSpace($stageName)) {
+                continue
+            }
+
+            $normalizedStage = $stageName.ToLowerInvariant()
+            $counts[$normalizedStage] = [int]$count
+            $rates[$normalizedStage] = if ($attempts -gt 0) {
+                [double][Math]::Round(($count * 100.0) / $attempts, 3)
+            }
+            else {
+                0.0
+            }
+        }
+    }
+
+    return [PSCustomObject]@{
+        counts = $counts
+        rates_percent = $rates
+        attempts_total = $attempts
+    }
 }
 
 function Get-ScaleProfileRelayFailureRateEvaluation {
@@ -197,6 +350,94 @@ function Get-ScaleProfileRelayFailureRateEvaluation {
             }) | Out-Null
 
         if (-not $passed) {
+            $failureMessages.Add(("p{0}: gate_pct={1} actual_pct={2}" -f $parallelism, $gatePercent, $rate)) | Out-Null
+        }
+
+        if ($rate -gt $worst) {
+            $worst = $rate
+        }
+    }
+
+    return [PSCustomObject]@{
+        worst_rate_percent = [double][Math]::Round($worst, 3)
+        profile_results = [object[]]$profileResults.ToArray()
+        all_passed = ($failureMessages.Count -eq 0)
+        failure_messages = [string[]]$failureMessages.ToArray()
+    }
+}
+
+function Get-ScaleProfileSocketClosedFailureRateEvaluation {
+    param(
+        [object]$ScaleSummary,
+        [hashtable]$BudgetMap,
+        [double]$FallbackGatePercent
+    )
+
+    if ($null -eq $ScaleSummary) {
+        return [PSCustomObject]@{
+            worst_rate_percent = $null
+            profile_results = @()
+            all_passed = $true
+            failure_messages = @()
+        }
+    }
+
+    $results = @($ScaleSummary.results)
+    if ($results.Count -eq 0) {
+        return [PSCustomObject]@{
+            worst_rate_percent = $null
+            profile_results = @()
+            all_passed = $true
+            failure_messages = @()
+        }
+    }
+
+    $worst = 0.0
+    $profileResults = New-Object System.Collections.Generic.List[object]
+    $failureMessages = New-Object System.Collections.Generic.List[string]
+
+    foreach ($profile in $results) {
+        $parallelism = [int](Get-NumberOrDefault -InputObject $profile -PropertyName "parallelism" -DefaultValue -1)
+        $rate = Get-NumberOrDefault -InputObject $profile -PropertyName "socket_closed_failure_rate_percent" -DefaultValue -1
+        if ($rate -lt 0) {
+            $socketClosedFailures = Get-NumberOrDefault -InputObject $profile -PropertyName "socket_closed_failures" -DefaultValue 0
+            $failed = Get-NumberOrDefault -InputObject $profile -PropertyName "failed_attempts" -DefaultValue 0
+            $succeeded = Get-NumberOrDefault -InputObject $profile -PropertyName "successful_iterations" -DefaultValue 0
+            $attempts = $failed + $succeeded
+            if ($attempts -gt 0) {
+                $rate = [double][Math]::Round(($socketClosedFailures * 100.0) / $attempts, 3)
+            }
+            else {
+                $rate = 0.0
+            }
+        }
+
+        $embeddedGate = Get-NumberOrDefault -InputObject $profile -PropertyName "gate_socket_closed_failure_rate_pct" -DefaultValue -1
+        $gatePercent = $FallbackGatePercent
+        $gateEnabled = ($FallbackGatePercent -ge 0)
+        if ($parallelism -gt 0 -and $BudgetMap.ContainsKey($parallelism)) {
+            $gatePercent = [double]$BudgetMap[$parallelism]
+            $gateEnabled = $true
+        }
+        elseif ($embeddedGate -ge 0) {
+            $gatePercent = [double]$embeddedGate
+            $gateEnabled = $true
+        }
+
+        $passed = $true
+        if ($gateEnabled) {
+            $passed = ($rate -le $gatePercent)
+        }
+
+        $profileResults.Add([PSCustomObject]@{
+                parallelism = $parallelism
+                socket_closed_failure_rate_percent = [double][Math]::Round($rate, 3)
+                gate_socket_closed_failure_rate_pct = if ($gateEnabled) { [double][Math]::Round($gatePercent, 3) } else { $null }
+                gate_enabled = $gateEnabled
+                gate_passed = [bool]$passed
+            }) | Out-Null
+
+        if ($gateEnabled -and -not $passed) {
             $failureMessages.Add(("p{0}: gate_pct={1} actual_pct={2}" -f $parallelism, $gatePercent, $rate)) | Out-Null
         }
 
@@ -348,12 +589,21 @@ if ($null -ne $scaleSummary -and -not [string]::IsNullOrWhiteSpace($HypothesisId
 }
 
 $scaleProfileRelayFailureBudgetMap = Parse-ScaleProfileRelayFailureRateBudgets -BudgetCsv $ScaleProfileRelayFailureRateBudgets
+$scaleProfileSocketClosedFailureBudgetMap = Parse-ScaleProfileSocketClosedFailureRateBudgets -BudgetCsv $ScaleProfileSocketClosedFailureRateBudgets
+$socketClosedStageBudgetMap = Parse-SocketClosedStageFailureRateBudgets -BudgetCsv $SocketClosedStageFailureRateBudgets
 $relayRateFromPerf = Get-RelayFailureRateFromPerfSummary -PerfSummary $perfSummary
 $scaleRelayRateEvaluation = Get-ScaleProfileRelayFailureRateEvaluation `
     -ScaleSummary $scaleSummary `
     -BudgetMap $scaleProfileRelayFailureBudgetMap `
     -FallbackGatePercent $MaxRelayFailureRatePercent
+$socketClosedRateFromPerf = Get-SocketClosedFailureRateFromPerfSummary -PerfSummary $perfSummary
+$scaleSocketClosedRateEvaluation = Get-ScaleProfileSocketClosedFailureRateEvaluation `
+    -ScaleSummary $scaleSummary `
+    -BudgetMap $scaleProfileSocketClosedFailureBudgetMap `
+    -FallbackGatePercent $MaxSocketClosedFailureRatePercent
+$socketClosedStageSnapshot = Get-SocketClosedStageRateSnapshotFromPerfSummary -PerfSummary $perfSummary
 $relayRateFromScale = $scaleRelayRateEvaluation.worst_rate_percent
+$socketClosedRateFromScale = $scaleSocketClosedRateEvaluation.worst_rate_percent
 $relayFailureRatePercent = 0.0
 if ($null -ne $relayRateFromPerf -and $relayRateFromPerf -gt $relayFailureRatePercent) {
     $relayFailureRatePercent = $relayRateFromPerf
@@ -361,6 +611,15 @@ if ($null -ne $relayRateFromPerf -and $relayRateFromPerf -gt $relayFailureRatePe
 
 if ($null -ne $relayRateFromScale -and $relayRateFromScale -gt $relayFailureRatePercent) {
     $relayFailureRatePercent = $relayRateFromScale
+}
+
+$socketClosedFailureRatePercent = 0.0
+if ($null -ne $socketClosedRateFromPerf -and $socketClosedRateFromPerf -gt $socketClosedFailureRatePercent) {
+    $socketClosedFailureRatePercent = $socketClosedRateFromPerf
+}
+
+if ($null -ne $socketClosedRateFromScale -and $socketClosedRateFromScale -gt $socketClosedFailureRatePercent) {
+    $socketClosedFailureRatePercent = $socketClosedRateFromScale
 }
 
 $reportTargetCount = $MinReportSampleSize
@@ -402,6 +661,33 @@ if (-not [bool]$scaleRelayRateEvaluation.all_passed) {
     }
 }
 
+if (($MaxSocketClosedFailureRatePercent -ge 0) -and ($socketClosedFailureRatePercent -gt $MaxSocketClosedFailureRatePercent)) {
+    $gatePassed = $false
+    $gateReasons.Add("socket_closed_failure_rate_gate_failed: gate_pct=$MaxSocketClosedFailureRatePercent actual_pct=$socketClosedFailureRatePercent") | Out-Null
+}
+
+if (-not [bool]$scaleSocketClosedRateEvaluation.all_passed) {
+    $gatePassed = $false
+    foreach ($failureMessage in @($scaleSocketClosedRateEvaluation.failure_messages)) {
+        $gateReasons.Add("scale_profile_socket_closed_failure_rate_gate_failed: $failureMessage") | Out-Null
+    }
+}
+
+foreach ($stageName in $socketClosedStageBudgetMap.Keys) {
+    $stageGatePercent = [double]$socketClosedStageBudgetMap[$stageName]
+    $stageActualPercent = if ($socketClosedStageSnapshot.rates_percent.ContainsKey($stageName)) {
+        [double]$socketClosedStageSnapshot.rates_percent[$stageName]
+    }
+    else {
+        0.0
+    }
+
+    if ($stageActualPercent -gt $stageGatePercent) {
+        $gatePassed = $false
+        $gateReasons.Add("socket_closed_stage_failure_rate_gate_failed: stage=$stageName gate_pct=$stageGatePercent actual_pct=$stageActualPercent") | Out-Null
+    }
+}
+
 if ($dbRate.rate_percent -gt $MaxDbTimeoutRatePercent) {
     $gatePassed = $false
     $gateReasons.Add("db_timeout_rate_gate_failed: gate_pct=$MaxDbTimeoutRatePercent actual_pct=$($dbRate.rate_percent)") | Out-Null
@@ -422,6 +708,9 @@ $summary = [ordered]@{
     gates = [ordered]@{
         max_relay_failure_rate_percent = $MaxRelayFailureRatePercent
         scale_profile_relay_failure_rate_budgets = $ScaleProfileRelayFailureRateBudgets
+        max_socket_closed_failure_rate_percent = $MaxSocketClosedFailureRatePercent
+        scale_profile_socket_closed_failure_rate_budgets = $ScaleProfileSocketClosedFailureRateBudgets
+        socket_closed_stage_failure_rate_budgets = $SocketClosedStageFailureRateBudgets
         max_db_timeout_rate_percent = $MaxDbTimeoutRatePercent
         max_diagnostics_queue_saturation_rate_percent = $MaxDiagnosticsQueueSaturationRatePercent
         min_report_sample_size = $MinReportSampleSize
@@ -431,6 +720,13 @@ $summary = [ordered]@{
         relay_failure_rate_perf_percent = if ($null -eq $relayRateFromPerf) { $null } else { [double][Math]::Round($relayRateFromPerf, 3) }
         relay_failure_rate_scale_worst_profile_percent = if ($null -eq $relayRateFromScale) { $null } else { [double][Math]::Round($relayRateFromScale, 3) }
         relay_failure_rate_scale_profiles = @($scaleRelayRateEvaluation.profile_results)
+        socket_closed_failure_rate_percent = [double][Math]::Round($socketClosedFailureRatePercent, 3)
+        socket_closed_failure_rate_perf_percent = if ($null -eq $socketClosedRateFromPerf) { $null } else { [double][Math]::Round($socketClosedRateFromPerf, 3) }
+        socket_closed_failure_rate_scale_worst_profile_percent = if ($null -eq $socketClosedRateFromScale) { $null } else { [double][Math]::Round($socketClosedRateFromScale, 3) }
+        socket_closed_failure_rate_scale_profiles = @($scaleSocketClosedRateEvaluation.profile_results)
+        socket_closed_failure_stage_counts_perf = $socketClosedStageSnapshot.counts
+        socket_closed_failure_stage_rates_perf = $socketClosedStageSnapshot.rates_percent
+        socket_closed_failure_stage_attempts_perf = [int]$socketClosedStageSnapshot.attempts_total
         db_timeout_rate_percent = [double]$dbRate.rate_percent
         db_timeout_reports = [int]$dbRate.timeout_reports
         diagnostics_queue_saturation_rate_percent = [double]$diagRate.rate_percent
