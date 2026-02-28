@@ -16,6 +16,7 @@ param(
     [int]$P50GateMs = 0,
     [int]$P95GateMs = 0,
     [int]$MaxDurationGateMs = 0,
+    [double]$MaxFailureRatePercent = -1,
     [switch]$AutoStartGateways,
     [string]$HypothesisId = "",
     [string]$SummaryPath = "docs/handshake/runlogs/probe_perf_gate.latest.json"
@@ -47,6 +48,33 @@ function Get-PercentileValue {
     $p = [Math]::Min(1.0, [Math]::Max(0.0, $Percentile))
     $index = [int][Math]::Floor(($SortedValues.Length - 1) * $p)
     return [double]$SortedValues[$index]
+}
+
+function Resolve-FailureBucketName {
+    param([string]$ErrorText)
+
+    if ([string]::IsNullOrWhiteSpace($ErrorText)) {
+        return "unknown"
+    }
+
+    $normalized = $ErrorText.ToLowerInvariant()
+    if ($normalized.Contains("endconnect") -or $normalized.Contains("connect")) {
+        return "connect_refused_or_unreachable"
+    }
+
+    if ($normalized.Contains("socket closed")) {
+        return "socket_closed_during_read"
+    }
+
+    if ($normalized.Contains("timeout")) {
+        return "timeout"
+    }
+
+    if ($normalized.Contains("job state is failed")) {
+        return "probe_job_failed"
+    }
+
+    return "other"
 }
 
 if ($Iterations -le 0) { throw "Iterations must be > 0." }
@@ -214,6 +242,13 @@ $durations = @($successRows | ForEach-Object { [double]$_.duration_ms } | Sort-O
 $durationArray = [double[]]$durations
 $successCount = $successRows.Count
 $failureCount = $failureRows.Count
+$attemptsTotal = $attemptId
+$failureRatePercent = if ($attemptsTotal -gt 0) {
+    [double][Math]::Round(($failureCount * 100.0) / $attemptsTotal, 3)
+}
+else {
+    0.0
+}
 $finishedAt = [DateTimeOffset]::UtcNow
 
 $p50 = Get-PercentileValue -SortedValues $durationArray -Percentile 0.50
@@ -235,6 +270,11 @@ if ($failureCount -gt $AllowFailures) {
     $gateReasons.Add("failure_budget_exceeded: allowed=$AllowFailures got=$failureCount") | Out-Null
 }
 
+if (($MaxFailureRatePercent -ge 0) -and ($failureRatePercent -gt $MaxFailureRatePercent)) {
+    $gatePassed = $false
+    $gateReasons.Add("failure_rate_gate_failed: gate_pct=$MaxFailureRatePercent actual_pct=$failureRatePercent") | Out-Null
+}
+
 if (($P50GateMs -gt 0) -and ($null -ne $p50) -and ($p50 -gt $P50GateMs)) {
     $gatePassed = $false
     $gateReasons.Add("p50_gate_failed: gate_ms=$P50GateMs actual_ms=$p50") | Out-Null
@@ -252,6 +292,15 @@ if (($MaxDurationGateMs -gt 0) -and ($null -ne $max) -and ($max -gt $MaxDuration
 
 $gateReasonArray = [string[]]$gateReasons.ToArray()
 $failureArray = [object[]]$failureRows.ToArray()
+$failureBucketCounts = @{}
+foreach ($failure in $failureRows) {
+    $bucket = Resolve-FailureBucketName -ErrorText ([string]$failure.error)
+    if (-not $failureBucketCounts.ContainsKey($bucket)) {
+        $failureBucketCounts[$bucket] = 0
+    }
+
+    $failureBucketCounts[$bucket]++
+}
 
 $summary = [ordered]@{
     timestamp_utc = [DateTimeOffset]::UtcNow.ToString("o")
@@ -265,6 +314,7 @@ $summary = [ordered]@{
     attempts_total = $attemptId
     successful_iterations = $successCount
     failed_attempts = $failureCount
+    failure_rate_percent = $failureRatePercent
     min_ms = $min
     p50_ms = $p50
     p95_ms = $p95
@@ -273,6 +323,7 @@ $summary = [ordered]@{
     durations_ms = $durationArray
     gate_passed = $gatePassed
     gate_reasons = $gateReasonArray
+    failure_buckets = $failureBucketCounts
     failures = $failureArray
     duration_total_ms = [Math]::Max(0, [int]($finishedAt - $startedAt).TotalMilliseconds)
 }

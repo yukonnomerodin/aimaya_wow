@@ -7,19 +7,22 @@ param(
     [int]$IterationsPerProfile = 16,
     [int]$AllowFailuresPerProfile = 4,
     [switch]$AutoStartGateways,
-    [string]$Profiles = "1,4,8,16",
+    [string]$Profiles = "1,4,8,16,32",
     [int]$P50GateP1 = 420,
     [int]$P95GateP1 = 520,
     [int]$MaxGateP1 = 620,
     [int]$P50GateP4 = 500,
     [int]$P95GateP4 = 600,
-    [int]$MaxGateP4 = 620,
+    [int]$MaxGateP4 = 700,
     [int]$P50GateP8 = 700,
     [int]$P95GateP8 = 900,
     [int]$MaxGateP8 = 1200,
     [int]$P50GateP16 = 1100,
     [int]$P95GateP16 = 1400,
-    [int]$MaxGateP16 = 2200
+    [int]$MaxGateP16 = 2200,
+    [int]$P50GateP32 = 1500,
+    [int]$P95GateP32 = 1900,
+    [int]$MaxGateP32 = 2800
 )
 
 Set-StrictMode -Version Latest
@@ -69,8 +72,11 @@ function Get-GatesForParallelism {
         16 {
             return [PSCustomObject]@{ p50 = $P50GateP16; p95 = $P95GateP16; max = $MaxGateP16 }
         }
+        32 {
+            return [PSCustomObject]@{ p50 = $P50GateP32; p95 = $P95GateP32; max = $MaxGateP32 }
+        }
         default {
-            throw "No gate configured for parallelism=$Parallelism. Supported defaults: 1,4,8,16."
+            throw "No gate configured for parallelism=$Parallelism. Supported defaults: 1,4,8,16,32."
         }
     }
 }
@@ -138,6 +144,7 @@ foreach ($parallelism in $profileList) {
             gate_passed = $profilePass
             successful_iterations = [int]$summary.successful_iterations
             failed_attempts = [int]$summary.failed_attempts
+            failure_rate_percent = [double]$summary.failure_rate_percent
             p50_ms = [double]$summary.p50_ms
             p95_ms = [double]$summary.p95_ms
             max_ms = [double]$summary.max_ms

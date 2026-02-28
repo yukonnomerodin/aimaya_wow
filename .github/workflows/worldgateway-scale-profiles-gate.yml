@@ -9,19 +9,34 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-SERVICE-BOUNDARY-RECOVERY-SLO-106"
+        default: "M2-R6-RUNTIME-ERROR-BUDGET-CAPACITY-107"
       iterations_per_profile:
         description: "Target successful probe iterations per profile"
         required: true
         default: "16"
+      max_relay_failure_rate_pct:
+        description: "max relay failure rate in percent"
+        required: true
+        default: "30.0"
+      max_db_timeout_rate_pct:
+        description: "max DB auth-bridge timeout rate in percent"
+        required: true
+        default: "0.5"
+      max_diag_queue_saturation_rate_pct:
+        description: "max diagnostics queue saturation fallback rate in percent"
+        required: true
+        default: "1.0"
 
 jobs:
   scale-gate:
     name: Scale Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      SCALE_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SERVICE-BOUNDARY-RECOVERY-SLO-106' }}
+      SCALE_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-RUNTIME-ERROR-BUDGET-CAPACITY-107' }}
       SCALE_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '16' }}
+      SCALE_MAX_RELAY_FAILURE_RATE_PCT: ${{ github.event.inputs.max_relay_failure_rate_pct || '30.0' }}
+      SCALE_MAX_DB_TIMEOUT_RATE_PCT: ${{ github.event.inputs.max_db_timeout_rate_pct || '0.5' }}
+      SCALE_MAX_DIAG_QUEUE_SAT_RATE_PCT: ${{ github.event.inputs.max_diag_queue_saturation_rate_pct || '1.0' }}
 
     steps:
       - name: Checkout
@@ -42,10 +57,20 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_retail_gateways.ps1 `
             -HypothesisId "${{ env.SCALE_HYPOTHESIS_ID }}"
 
-      - name: Run Scale Profiles Gate (1/4/8/16)
+      - name: Run Scale Profiles Gate (1/4/8/16/32)
         shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_world_probe_scale_profiles.ps1 `
             -HypothesisId "${{ env.SCALE_HYPOTHESIS_ID }}" `
             -IterationsPerProfile ${{ env.SCALE_ITERATIONS_PER_PROFILE }} `
-            -Profiles "1,4,8,16"
+            -Profiles "1,4,8,16,32"
+
+      - name: Run Runtime Error Budget Gate
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_world_probe_runtime_error_budget_gate.ps1 `
+            -HypothesisId "${{ env.SCALE_HYPOTHESIS_ID }}" `
+            -ScaleSummaryPath "docs/handshake/runlogs/probe_scale_profiles.latest.json" `
+            -MaxRelayFailureRatePercent ${{ env.SCALE_MAX_RELAY_FAILURE_RATE_PCT }} `
+            -MaxDbTimeoutRatePercent ${{ env.SCALE_MAX_DB_TIMEOUT_RATE_PCT }} `
+            -MaxDiagnosticsQueueSaturationRatePercent ${{ env.SCALE_MAX_DIAG_QUEUE_SAT_RATE_PCT }}

@@ -106,6 +106,9 @@ public sealed class HandshakeRelaySmokeTests : IClassFixture<GatewaySmokeFixture
         Assert.True(GetRequiredInt(reportRoot, "relay_failure_drain_timeout_ms") >= 0);
         Assert.NotEqual(string.Empty, GetRequiredString(reportRoot, "relay_failure_recovery_policy"));
         Assert.NotEqual(string.Empty, GetRequiredString(reportRoot, "handshake_diagnostics_dispatch_mode"));
+        Assert.True(GetRequiredLong(reportRoot, "handshake_diagnostics_queue_enqueue_attempt_total") >= 0);
+        Assert.True(GetRequiredLong(reportRoot, "handshake_diagnostics_queue_enqueued_total") >= 0);
+        Assert.True(GetRequiredLong(reportRoot, "handshake_diagnostics_queue_saturation_fallback_total") >= 0);
     }
 
     private static JsonElement AssertJson(JsonDocument? json)
@@ -133,6 +136,11 @@ public sealed class HandshakeRelaySmokeTests : IClassFixture<GatewaySmokeFixture
     private static int GetRequiredInt(JsonElement root, string propertyName)
     {
         return GetRequiredProperty(root, propertyName).GetInt32();
+    }
+
+    private static long GetRequiredLong(JsonElement root, string propertyName)
+    {
+        return GetRequiredProperty(root, propertyName).GetInt64();
     }
 
     private static bool ContainsInvariant(JsonElement temporalInvariants, string invariantName)

@@ -20,6 +20,9 @@ internal sealed record HandshakeLabReport
     public int RelayFailureDrainTimeoutMs { get; init; }
     public int DbAuthBridgeTimeoutMs { get; init; }
     public string HandshakeDiagnosticsDispatchMode { get; init; } = global::Adapter.WorldGateway.HandshakeDiagnosticsDispatchMode.Sync.ToString();
+    public long HandshakeDiagnosticsQueueEnqueueAttemptTotal { get; init; }
+    public long HandshakeDiagnosticsQueueEnqueuedTotal { get; init; }
+    public long HandshakeDiagnosticsQueueSaturationFallbackTotal { get; init; }
     public uint ConnectionId { get; init; }
     public bool AckObserved { get; init; }
     public long? AckConfirmedElapsedMs { get; init; }
@@ -79,7 +82,10 @@ internal sealed record HandshakeLabReport
         DateTimeOffset openedAt,
         DateTimeOffset closedAt,
         long bytesClientToWorld,
-        long bytesWorldToClient)
+        long bytesWorldToClient,
+        long handshakeDiagnosticsQueueEnqueueAttemptTotal = 0,
+        long handshakeDiagnosticsQueueEnqueuedTotal = 0,
+        long handshakeDiagnosticsQueueSaturationFallbackTotal = 0)
     {
         state.TryGetAckConfirmedElapsedMs(out long ackElapsedMs);
         bool hasDisconnect = state.TryGetDisconnect(out uint disconnectReason, out long disconnectElapsedMs);
@@ -147,6 +153,9 @@ internal sealed record HandshakeLabReport
             RelayFailureDrainTimeoutMs = options.RelayFailureDrainTimeoutMs,
             DbAuthBridgeTimeoutMs = options.AuthBridgeDbTimeoutMs,
             HandshakeDiagnosticsDispatchMode = handshakeDiagnosticsDispatchMode.ToString(),
+            HandshakeDiagnosticsQueueEnqueueAttemptTotal = handshakeDiagnosticsQueueEnqueueAttemptTotal,
+            HandshakeDiagnosticsQueueEnqueuedTotal = handshakeDiagnosticsQueueEnqueuedTotal,
+            HandshakeDiagnosticsQueueSaturationFallbackTotal = handshakeDiagnosticsQueueSaturationFallbackTotal,
             ConnectionId = connectionId,
             AckObserved = state.AckObserved,
             AckConfirmedElapsedMs = ackElapsedMs >= 0 ? ackElapsedMs : null,

@@ -118,5 +118,8 @@ public sealed partial class WorldProxyListener : BackgroundService
     private readonly WorldSessionMaterialRepository _worldSessionMaterialRepository;
     private readonly Channel<HandshakeLabReportWriteRequest>? _handshakeDiagnosticsChannel;
     private Task? _handshakeDiagnosticsDrainTask;
+    private long _handshakeDiagnosticsQueueEnqueueAttempts;
+    private long _handshakeDiagnosticsQueueEnqueued;
+    private long _handshakeDiagnosticsQueueSaturationFallbacks;
 
 }

@@ -220,6 +220,7 @@ public sealed partial class WorldProxyListener
 
         try
         {
+            (long queueEnqueueAttempts, long queueEnqueued, long queueSaturationFallbacks) = GetHandshakeDiagnosticsQueueSnapshot();
             HandshakeLabReport report = HandshakeLabReport.Create(
                 connectionId,
                 _options,
@@ -228,7 +229,10 @@ public sealed partial class WorldProxyListener
                 connectionOpenedAt,
                 DateTimeOffset.UtcNow,
                 transferredClientToWorld,
-                transferredWorldToClient);
+                transferredWorldToClient,
+                handshakeDiagnosticsQueueEnqueueAttemptTotal: queueEnqueueAttempts,
+                handshakeDiagnosticsQueueEnqueuedTotal: queueEnqueued,
+                handshakeDiagnosticsQueueSaturationFallbackTotal: queueSaturationFallbacks);
             HandshakeLabReportWriteRequest request = new(
                 ConnectionId: connectionId,
                 Report: report,

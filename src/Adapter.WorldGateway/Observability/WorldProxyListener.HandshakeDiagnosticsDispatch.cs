@@ -46,6 +46,8 @@ public sealed partial class WorldProxyListener
 
     private bool TryEnqueueHandshakeLabReport(HandshakeLabReportWriteRequest request)
     {
+        Interlocked.Increment(ref _handshakeDiagnosticsQueueEnqueueAttempts);
+
         if (_handshakeDiagnosticsChannel is null)
         {
             return false;
@@ -53,14 +55,24 @@ public sealed partial class WorldProxyListener
 
         if (_handshakeDiagnosticsChannel.Writer.TryWrite(request))
         {
+            Interlocked.Increment(ref _handshakeDiagnosticsQueueEnqueued);
             return true;
         }
 
+        Interlocked.Increment(ref _handshakeDiagnosticsQueueSaturationFallbacks);
         _logger.LogWarning(
             "[WorldProxy][HANDSHAKE-LAB] Diagnostics queue is saturated. Falling back to synchronous write. ConnectionId={ConnectionId}, QueueCapacity={QueueCapacity}",
             request.ConnectionId,
             _options.HandshakeDiagnosticsBackgroundQueueCapacity);
         return false;
+    }
+
+    private (long EnqueueAttempts, long Enqueued, long SaturationFallbacks) GetHandshakeDiagnosticsQueueSnapshot()
+    {
+        return (
+            EnqueueAttempts: Volatile.Read(ref _handshakeDiagnosticsQueueEnqueueAttempts),
+            Enqueued: Volatile.Read(ref _handshakeDiagnosticsQueueEnqueued),
+            SaturationFallbacks: Volatile.Read(ref _handshakeDiagnosticsQueueSaturationFallbacks));
     }
 
     private async Task ProcessHandshakeDiagnosticsQueueAsync()

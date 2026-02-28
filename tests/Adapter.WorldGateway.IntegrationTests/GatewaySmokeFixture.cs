@@ -13,7 +13,7 @@ public sealed class GatewaySmokeFixture : IDisposable
     public GatewaySmokeFixture()
     {
         _repoRoot = ResolveRepoRoot();
-        HypothesisId = "M2-R6-SERVICE-BOUNDARY-RECOVERY-SLO-106";
+        HypothesisId = "M2-R6-RUNTIME-ERROR-BUDGET-CAPACITY-107";
         IsEnabled = string.Equals(
             Environment.GetEnvironmentVariable("WORLDGW_ENABLE_INTEGRATION_SMOKE"),
             "1",
