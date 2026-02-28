@@ -29,51 +29,22 @@ public sealed partial class WorldProxyListener
         _probeAuthResponseReplayPatchVirtualRealmEntryToRuntimeRealm = _options.ProbeAuthResponseReplayPatchVirtualRealmEntryToRuntimeRealm;
         _probeAuthResponseReplayPatchTopVirtualRealmAddressToRuntimeRealm = _options.ProbeAuthResponseReplayPatchTopVirtualRealmAddressToRuntimeRealm;
         _probeAuthResponseReplayBisectionResultOnlyErrorOk = _options.ProbeAuthResponseReplayBisectionResultOnlyErrorOk;
-        _ackPolicyMode = AckPolicyResolver.Parse(_protocolOptions.AckPolicy);
-        _bootstrapFlushTriggerMode = WorldProxyConfigParsers.ParseBootstrapFlushTriggerMode(
-            _options.BootstrapFlushTriggerSource,
-            out _bootstrapFlushTriggerModeValid);
-        _enterEncryptedModeOpcodeValid = WorldProxyConfigParsers.TryParseFlexibleUInt32(_options.EnterEncryptedModeOpcode, out _enterEncryptedModeOpcode);
-        _probeAuthResponseOpcode = WorldGatewayOpcodes.RetailSmsgAuthResponse;
-        if (!_enterEncryptedModeOpcodeValid)
+        ParsedOptionInitializationResult parsedOptionInitialization = ParseOptionInitialization(_options, _protocolOptions);
+        _ackPolicyMode = parsedOptionInitialization.AckPolicyMode;
+        _bootstrapFlushTriggerMode = parsedOptionInitialization.BootstrapFlushTriggerMode;
+        _bootstrapFlushTriggerModeValid = parsedOptionInitialization.BootstrapFlushTriggerModeValid;
+        _enterEncryptedModeOpcode = parsedOptionInitialization.EnterEncryptedModeOpcode;
+        _enterEncryptedModeOpcodeValid = parsedOptionInitialization.EnterEncryptedModeOpcodeValid;
+        _probeAuthResponseOpcode = parsedOptionInitialization.ProbeAuthResponseOpcode;
+        _probeAuthResponseOpcodeOverrideProvided = parsedOptionInitialization.ProbeAuthResponseOpcodeOverrideProvided;
+        _probeAuthResponseOpcodeOverrideValid = parsedOptionInitialization.ProbeAuthResponseOpcodeOverrideValid;
+        _authResponseFuzzMutation = parsedOptionInitialization.AuthResponseFuzzMutation;
+        _authResponseFuzzPlanRecognized = parsedOptionInitialization.AuthResponseFuzzPlanRecognized;
+        _probeDropDeferredOpcodeConfigProvided = parsedOptionInitialization.ProbeDropDeferredOpcodeConfigProvided;
+        _probeDropDeferredOpcodeParseError = parsedOptionInitialization.ProbeDropDeferredOpcodeParseError;
+        foreach (uint dropOpcode in parsedOptionInitialization.ProbeDropDeferredOpcodes)
         {
-            _enterEncryptedModeOpcode = WorldGatewayOpcodes.RetailSmsgEnterEncryptedModeDefault;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_options.ProbeAuthResponseOpcodeOverride))
-        {
-            _probeAuthResponseOpcodeOverrideProvided = true;
-            _probeAuthResponseOpcodeOverrideValid = WorldProxyConfigParsers.TryParseFlexibleUInt32(
-                _options.ProbeAuthResponseOpcodeOverride,
-                out uint parsedAuthOpcode);
-            if (_probeAuthResponseOpcodeOverrideValid)
-            {
-                _probeAuthResponseOpcode = parsedAuthOpcode;
-            }
-        }
-
-        _authResponseFuzzMutation = AuthResponseFuzzMutationResolver.Resolve(
-            _options.ProbeAuthResponseFuzzerEnabled,
-            _options.ProbeAuthResponseFuzzerPlan,
-            _options.ProbeAuthResponseFuzzerIteration,
-            WorldGatewayOpcodes.RetailSmsgAuthResponseSweepStart,
-            WorldGatewayOpcodes.RetailSmsgAuthResponseSweepCount,
-            out _authResponseFuzzPlanRecognized);
-        if (_authResponseFuzzMutation.Enabled && _authResponseFuzzMutation.OpcodeOverride is uint fuzzOpcode)
-        {
-            _probeAuthResponseOpcode = fuzzOpcode;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_options.ProbeDropDeferredOpcode))
-        {
-            _probeDropDeferredOpcodeConfigProvided = true;
-            if (!WorldProxyConfigParsers.TryParseProbeDropDeferredOpcodes(
-                    _options.ProbeDropDeferredOpcode,
-                    _probeDropDeferredOpcodes,
-                    out string? parseError))
-            {
-                _probeDropDeferredOpcodeParseError = parseError;
-            }
+            _probeDropDeferredOpcodes.Add(dropOpcode);
         }
 
         ProbeFixedHexPayloadLoadResult preludePayloadLoad = LoadOptionalFixedLengthHexPayload(
