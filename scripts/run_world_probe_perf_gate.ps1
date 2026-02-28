@@ -1,0 +1,281 @@
+param(
+    [string]$ProbeScriptPath = "scripts/invoke_synthetic_world_probe.ps1",
+    [string]$StartGatewaysScriptPath = "scripts/start_retail_gateways.ps1",
+    [string]$ServerHost = "127.0.0.1",
+    [int]$Port = 8086,
+    [int]$AccountId = 1,
+    [int]$Iterations = 30,
+    [int]$Parallelism = 4,
+    [int]$AllowFailures = 4,
+    [int]$DispatchStaggerMs = 50,
+    [int]$ProbeConnectTimeoutMs = 4000,
+    [int]$ProbeReadTimeoutMs = 4000,
+    [int]$ProbePostAckReadFrames = 8,
+    [int]$ProbePostAckReadTimeoutMs = 250,
+    [int]$ProbePostAckWaitMs = 100,
+    [int]$P50GateMs = 0,
+    [int]$P95GateMs = 0,
+    [int]$MaxDurationGateMs = 0,
+    [switch]$AutoStartGateways,
+    [string]$HypothesisId = "",
+    [string]$SummaryPath = "docs/handshake/runlogs/probe_perf_gate.latest.json"
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+function Resolve-RepoPath {
+    param([string]$PathValue)
+
+    if ([System.IO.Path]::IsPathRooted($PathValue)) {
+        return $PathValue
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $PathValue))
+}
+
+function Get-PercentileValue {
+    param(
+        [double[]]$SortedValues,
+        [double]$Percentile
+    )
+
+    if ($null -eq $SortedValues -or $SortedValues.Length -eq 0) {
+        return $null
+    }
+
+    $p = [Math]::Min(1.0, [Math]::Max(0.0, $Percentile))
+    $index = [int][Math]::Floor(($SortedValues.Length - 1) * $p)
+    return [double]$SortedValues[$index]
+}
+
+if ($Iterations -le 0) { throw "Iterations must be > 0." }
+if ($Parallelism -le 0) { throw "Parallelism must be > 0." }
+if ($AllowFailures -lt 0) { throw "AllowFailures must be >= 0." }
+
+$resolvedProbeScript = Resolve-RepoPath -PathValue $ProbeScriptPath
+if (-not (Test-Path $resolvedProbeScript)) {
+    throw "Probe script not found: $resolvedProbeScript"
+}
+
+$resolvedStartGatewaysScript = Resolve-RepoPath -PathValue $StartGatewaysScriptPath
+if ($AutoStartGateways -and -not (Test-Path $resolvedStartGatewaysScript)) {
+    throw "Start script not found: $resolvedStartGatewaysScript"
+}
+
+$resolvedSummaryPath = Resolve-RepoPath -PathValue $SummaryPath
+New-Item -ItemType Directory -Path (Split-Path -Path $resolvedSummaryPath -Parent) -Force | Out-Null
+
+if ($AutoStartGateways) {
+    $startArgs = @(
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", $resolvedStartGatewaysScript
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($HypothesisId)) {
+        $startArgs += @("-HypothesisId", $HypothesisId)
+    }
+
+    & powershell @startArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start retail gateways."
+    }
+}
+
+$targetSuccessCount = $Iterations
+$maxAttemptCount = $Iterations + $AllowFailures
+$runningJobs = New-Object System.Collections.Generic.List[System.Management.Automation.Job]
+$successRows = New-Object System.Collections.Generic.List[object]
+$failureRows = New-Object System.Collections.Generic.List[object]
+$attemptId = 0
+$startedAt = [DateTimeOffset]::UtcNow
+
+try {
+    while (($successRows.Count -lt $targetSuccessCount) -and (($attemptId -lt $maxAttemptCount) -or ($runningJobs.Count -gt 0))) {
+        while (($runningJobs.Count -lt $Parallelism) -and ($attemptId -lt $maxAttemptCount) -and (($successRows.Count + $runningJobs.Count) -lt $targetSuccessCount)) {
+            $attemptId++
+            $localAttemptId = $attemptId
+            $job = Start-Job -Name ("probe-{0}" -f $localAttemptId) -ScriptBlock {
+                param(
+                    [int]$AttemptId,
+                    [string]$ResolvedProbeScript,
+                    [string]$ServerHost,
+                    [int]$Port,
+                    [int]$AccountId,
+                    [int]$ConnectTimeoutMs,
+                    [int]$ReadTimeoutMs,
+                    [int]$PostAckReadFrames,
+                    [int]$PostAckReadTimeoutMs,
+                    [int]$PostAckWaitMs
+                )
+
+                Set-StrictMode -Version Latest
+                $ErrorActionPreference = "Stop"
+
+                $probeOutput = & $ResolvedProbeScript `
+                    -ServerHost $ServerHost `
+                    -Port $Port `
+                    -AccountId $AccountId `
+                    -ConnectTimeoutMs $ConnectTimeoutMs `
+                    -ReadTimeoutMs $ReadTimeoutMs `
+                    -PostAckReadFrames $PostAckReadFrames `
+                    -PostAckReadTimeoutMs $PostAckReadTimeoutMs `
+                    -PostAckWaitMs $PostAckWaitMs
+
+                $probeJson = ($probeOutput -join "`n") | ConvertFrom-Json
+                $postAckOpcodes = @($probeJson.post_ack_observed_opcodes)
+                [PSCustomObject]@{
+                    attempt_id = $AttemptId
+                    duration_ms = [double]$probeJson.duration_ms
+                    ack_sent = [bool]$probeJson.ack_sent
+                    enter_encrypted_seen = [bool]$probeJson.enter_encrypted_seen
+                    post_ack_opcode_count = $postAckOpcodes.Count
+                }
+            } -ArgumentList @(
+                $localAttemptId,
+                $resolvedProbeScript,
+                $ServerHost,
+                $Port,
+                $AccountId,
+                $ProbeConnectTimeoutMs,
+                $ProbeReadTimeoutMs,
+                $ProbePostAckReadFrames,
+                $ProbePostAckReadTimeoutMs,
+                $ProbePostAckWaitMs
+            )
+
+            $runningJobs.Add($job) | Out-Null
+
+            if ($DispatchStaggerMs -gt 0) {
+                Start-Sleep -Milliseconds $DispatchStaggerMs
+            }
+        }
+
+        if ($runningJobs.Count -eq 0) {
+            break
+        }
+
+        $completedJob = Wait-Job -Job $runningJobs -Any -Timeout 2
+        if ($null -eq $completedJob) {
+            continue
+        }
+
+        $null = $runningJobs.Remove($completedJob)
+        try {
+            if ($completedJob.State -ne 'Completed') {
+                $reason = if ($null -ne $completedJob.ChildJobs -and $completedJob.ChildJobs.Count -gt 0) {
+                    $completedJob.ChildJobs[0].JobStateInfo.Reason
+                }
+                else {
+                    $null
+                }
+
+                throw "Job state is $($completedJob.State). Reason=$reason"
+            }
+
+            $jobResult = Receive-Job -Job $completedJob -ErrorAction Stop | Select-Object -Last 1
+            if ($null -eq $jobResult) {
+                throw "Job returned empty result."
+            }
+
+            $successRows.Add([PSCustomObject]@{
+                    attempt_id = [int]$jobResult.attempt_id
+                    duration_ms = [double]$jobResult.duration_ms
+                    ack_sent = [bool]$jobResult.ack_sent
+                    enter_encrypted_seen = [bool]$jobResult.enter_encrypted_seen
+                    post_ack_opcode_count = [int]$jobResult.post_ack_opcode_count
+                }) | Out-Null
+        }
+        catch {
+            $jobAttemptId = if ($completedJob.Name -match '^probe-(\d+)$') { [int]$Matches[1] } else { $attemptId }
+            $failureRows.Add([PSCustomObject]@{
+                    attempt_id = $jobAttemptId
+                    error = $_.Exception.Message
+                }) | Out-Null
+        }
+        finally {
+            Remove-Job -Job $completedJob -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+finally {
+    foreach ($job in @($runningJobs)) {
+        try {
+            Stop-Job -Job $job -ErrorAction SilentlyContinue | Out-Null
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        }
+        catch {
+        }
+    }
+}
+
+$durations = @($successRows | ForEach-Object { [double]$_.duration_ms } | Sort-Object)
+$durationArray = [double[]]$durations
+$successCount = $successRows.Count
+$failureCount = $failureRows.Count
+$finishedAt = [DateTimeOffset]::UtcNow
+
+$p50 = Get-PercentileValue -SortedValues $durationArray -Percentile 0.50
+$p95 = Get-PercentileValue -SortedValues $durationArray -Percentile 0.95
+$avg = if ($successCount -gt 0) { [double][Math]::Round((($durationArray | Measure-Object -Average).Average), 2) } else { $null }
+$min = if ($successCount -gt 0) { [double]$durationArray[0] } else { $null }
+$max = if ($successCount -gt 0) { [double]$durationArray[$durationArray.Length - 1] } else { $null }
+
+$gatePassed = $true
+$gateReasons = New-Object System.Collections.Generic.List[string]
+
+if ($successCount -lt $targetSuccessCount) {
+    $gatePassed = $false
+    $gateReasons.Add("insufficient_successful_probes: expected=$targetSuccessCount got=$successCount") | Out-Null
+}
+
+if ($failureCount -gt $AllowFailures) {
+    $gatePassed = $false
+    $gateReasons.Add("failure_budget_exceeded: allowed=$AllowFailures got=$failureCount") | Out-Null
+}
+
+if (($P50GateMs -gt 0) -and ($null -ne $p50) -and ($p50 -gt $P50GateMs)) {
+    $gatePassed = $false
+    $gateReasons.Add("p50_gate_failed: gate_ms=$P50GateMs actual_ms=$p50") | Out-Null
+}
+
+if (($P95GateMs -gt 0) -and ($null -ne $p95) -and ($p95 -gt $P95GateMs)) {
+    $gatePassed = $false
+    $gateReasons.Add("p95_gate_failed: gate_ms=$P95GateMs actual_ms=$p95") | Out-Null
+}
+
+if (($MaxDurationGateMs -gt 0) -and ($null -ne $max) -and ($max -gt $MaxDurationGateMs)) {
+    $gatePassed = $false
+    $gateReasons.Add("max_duration_gate_failed: gate_ms=$MaxDurationGateMs actual_ms=$max") | Out-Null
+}
+
+$summary = [PSCustomObject]@{
+    timestamp_utc = [DateTimeOffset]::UtcNow.ToString("o")
+    server_host = $ServerHost
+    port = $Port
+    account_id = $AccountId
+    hypothesis_id = $HypothesisId
+    target_iterations = $targetSuccessCount
+    parallelism = $Parallelism
+    allow_failures = $AllowFailures
+    attempts_total = $attemptId
+    successful_iterations = $successCount
+    failed_attempts = $failureCount
+    min_ms = $min
+    p50_ms = $p50
+    p95_ms = $p95
+    avg_ms = $avg
+    max_ms = $max
+    durations_ms = $durationArray
+    gate_passed = $gatePassed
+    gate_reasons = $gateReasons
+    duration_total_ms = [Math]::Max(0, [int]($finishedAt - $startedAt).TotalMilliseconds)
+}
+
+($summary | ConvertTo-Json -Depth 8) | Set-Content -Path $resolvedSummaryPath -Encoding UTF8
+$summary | ConvertTo-Json -Depth 8
+
+if (-not $gatePassed) {
+    exit 1
+}

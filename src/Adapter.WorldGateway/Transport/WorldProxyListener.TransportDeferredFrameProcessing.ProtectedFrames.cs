@@ -96,8 +96,8 @@ public sealed partial class WorldProxyListener
                     BytesWritten: bytesWritten);
             }
 
-            string plainSha256 = Convert.ToHexString(SHA256.HashData(frame.Frame));
-            string protectedSha256 = Convert.ToHexString(SHA256.HashData(protectedFrame));
+            string plainSha256 = ComputeSha256Hex(frame.Frame);
+            string protectedSha256 = ComputeSha256Hex(protectedFrame);
             string protectedTagHex = Convert.ToHexString(protectedFrame.AsSpan(4, 12));
             DeferredFrameParityResult deferredParity = new(
                 Status: "not_evaluated",
@@ -257,5 +257,16 @@ public sealed partial class WorldProxyListener
             ShouldTerminateConnection: false,
             ShouldBreakRelay: false,
             BytesWritten: bytesWritten);
+    }
+
+    private static string ComputeSha256Hex(ReadOnlySpan<byte> bytes)
+    {
+        Span<byte> hashBuffer = stackalloc byte[32];
+        if (SHA256.TryHashData(bytes, hashBuffer, out int written) && written == hashBuffer.Length)
+        {
+            return Convert.ToHexString(hashBuffer);
+        }
+
+        return Convert.ToHexString(SHA256.HashData(bytes));
     }
 }

@@ -16,13 +16,17 @@ public sealed partial class WorldProxyListener
             foreach (ReadOnlyMemory<byte> segment in input)
             {
                 ReadOnlySpan<byte> span = segment.Span;
-                for (int idx = 0; idx < span.Length; idx++)
+                int idx = 0;
+                while (idx < span.Length)
                 {
-                    byte current = span[idx];
-
                     if (_payloadBytesExpected > 0)
                     {
-                        _payloadBuffer[_payloadBytesRead++] = current;
+                        int payloadBytesRemaining = _payloadBytesExpected - _payloadBytesRead;
+                        int bytesAvailableInSegment = span.Length - idx;
+                        int bytesToCopy = Math.Min(payloadBytesRemaining, bytesAvailableInSegment);
+                        span.Slice(idx, bytesToCopy).CopyTo(_payloadBuffer.AsSpan(_payloadBytesRead, bytesToCopy));
+                        _payloadBytesRead += bytesToCopy;
+                        idx += bytesToCopy;
 
                         if (_payloadBytesRead < _payloadBytesExpected)
                         {
@@ -44,6 +48,8 @@ public sealed partial class WorldProxyListener
                         continue;
                     }
 
+                    byte current = span[idx];
+                    idx++;
                     _header[_headerBytesRead] = current;
                     _authCrypt.TransformServerToClient(_header.AsSpan(_headerBytesRead, 1));
                     _headerBytesRead++;

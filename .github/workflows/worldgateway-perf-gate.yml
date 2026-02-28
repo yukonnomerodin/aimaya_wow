@@ -1,0 +1,59 @@
+name: WorldGateway Perf Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      hypothesis_id:
+        description: "HypothesisId used for gateway start and summary metadata"
+        required: false
+        default: "M2-R5-TRANSLATOR-AUTHBRIDGE-CLUSTER-SPLIT-103"
+      iterations:
+        description: "Target successful probe iterations"
+        required: true
+        default: "30"
+      parallelism:
+        description: "Concurrent probe jobs"
+        required: true
+        default: "4"
+      p50_gate_ms:
+        description: "p50 latency gate in ms (0 disables)"
+        required: true
+        default: "220"
+      p95_gate_ms:
+        description: "p95 latency gate in ms (0 disables)"
+        required: true
+        default: "350"
+
+jobs:
+  perf-gate:
+    name: Perf Gate (Self-Hosted Windows)
+    runs-on: [self-hosted, windows]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build WorldGateway
+        shell: powershell
+        run: dotnet build src/Adapter.WorldGateway/Adapter.WorldGateway.csproj
+
+      - name: Start Retail Gateways
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_retail_gateways.ps1 `
+            -HypothesisId "${{ inputs.hypothesis_id }}"
+
+      - name: Run Probe Perf Gate
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_world_probe_perf_gate.ps1 `
+            -Iterations ${{ inputs.iterations }} `
+            -Parallelism ${{ inputs.parallelism }} `
+            -P50GateMs ${{ inputs.p50_gate_ms }} `
+            -P95GateMs ${{ inputs.p95_gate_ms }} `
+            -HypothesisId "${{ inputs.hypothesis_id }}"
