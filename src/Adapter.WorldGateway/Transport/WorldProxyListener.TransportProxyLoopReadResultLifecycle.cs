@@ -41,34 +41,22 @@ public sealed partial class WorldProxyListener
             if (processResult.ShouldTerminateConnection)
             {
                 reader.AdvanceTo(buffer.End);
-                return new ProxyLoopReadResultProcessingResult(
-                    ShouldTerminateConnection: true,
-                    ShouldBreakRelay: false,
-                    BytesWritten: bytesWritten);
+                return CreateReadResultTerminateResult(bytesWritten);
             }
 
             if (processResult.ShouldBreakRelay)
             {
                 reader.AdvanceTo(buffer.End);
-                return new ProxyLoopReadResultProcessingResult(
-                    ShouldTerminateConnection: false,
-                    ShouldBreakRelay: true,
-                    BytesWritten: bytesWritten);
+                return CreateReadResultBreakRelayResult(bytesWritten);
             }
         }
 
         reader.AdvanceTo(buffer.End);
         if (readResult.IsCanceled || readResult.IsCompleted)
         {
-            return new ProxyLoopReadResultProcessingResult(
-                ShouldTerminateConnection: false,
-                ShouldBreakRelay: true,
-                BytesWritten: bytesWritten);
+            return CreateReadResultBreakRelayResult(bytesWritten);
         }
 
-        return new ProxyLoopReadResultProcessingResult(
-            ShouldTerminateConnection: false,
-            ShouldBreakRelay: false,
-            BytesWritten: bytesWritten);
+        return CreateReadResultContinueResult(bytesWritten);
     }
 }
