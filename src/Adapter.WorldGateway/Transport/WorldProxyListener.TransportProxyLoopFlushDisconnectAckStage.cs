@@ -21,10 +21,7 @@ public sealed partial class WorldProxyListener
         FlushResult flushResult = await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
         if (flushResult.IsCanceled || flushResult.IsCompleted)
         {
-            return new ProxyBufferFlushDisconnectAckStageResult(
-                ShouldTerminateConnection: false,
-                ShouldBreakRelay: true,
-                BytesWritten: bytesWritten);
+            return CreateFlushDisconnectAckBreakRelayResult(bytesWritten);
         }
 
         if (direction == "client->world" && bridgeState.ConsumeClientRequestedDisconnect())
@@ -33,10 +30,7 @@ public sealed partial class WorldProxyListener
                 "[WorldProxy][MAP] Client requested world disconnect. ConnectionId={ConnectionId}, Direction={Direction}. Ending relay side.",
                 connectionId,
                 direction);
-            return new ProxyBufferFlushDisconnectAckStageResult(
-                ShouldTerminateConnection: false,
-                ShouldBreakRelay: true,
-                BytesWritten: bytesWritten);
+            return CreateFlushDisconnectAckBreakRelayResult(bytesWritten);
         }
 
         AckGateDeferredFlushResult ackGateResult = await TryHandleAckGateAndDeferredFlushAsync(
@@ -49,23 +43,14 @@ public sealed partial class WorldProxyListener
         bytesWritten += ackGateResult.BytesWritten;
         if (ackGateResult.ShouldTerminateConnection)
         {
-            return new ProxyBufferFlushDisconnectAckStageResult(
-                ShouldTerminateConnection: true,
-                ShouldBreakRelay: false,
-                BytesWritten: bytesWritten);
+            return CreateFlushDisconnectAckTerminateResult(bytesWritten);
         }
 
         if (ackGateResult.ShouldBreakRelay)
         {
-            return new ProxyBufferFlushDisconnectAckStageResult(
-                ShouldTerminateConnection: false,
-                ShouldBreakRelay: true,
-                BytesWritten: bytesWritten);
+            return CreateFlushDisconnectAckBreakRelayResult(bytesWritten);
         }
 
-        return new ProxyBufferFlushDisconnectAckStageResult(
-            ShouldTerminateConnection: false,
-            ShouldBreakRelay: false,
-            BytesWritten: bytesWritten);
+        return CreateFlushDisconnectAckContinueResult(bytesWritten);
     }
 }
