@@ -44,75 +44,19 @@ public sealed partial class WorldProxyListener
             waitForEnterEncryptedAckGate,
             loopState);
 
-        AuthBridgeHandlingResult authBridgeResult = await TryHandleAuthBridgeAsync(
+        ProxyBufferAuthBridgeAndTransformStageResult authTransformResult = await TryRunProxyBufferAuthBridgeAndTransformStageAsync(
                 connectionId,
                 direction,
                 buffer,
                 writer,
                 bridgeState,
-                loopState.FirstAcoreChallengeBridged,
-                loopState.FirstRetailAuthSessionBridged,
+                loopState,
                 cancellationToken)
             .ConfigureAwait(false);
-
-        loopState.FirstAcoreChallengeBridged = authBridgeResult.FirstAcoreChallengeBridged;
-        loopState.FirstRetailAuthSessionBridged = authBridgeResult.FirstRetailAuthSessionBridged;
-        bytesWritten += authBridgeResult.BytesWritten;
-        if (authBridgeResult.ShouldTerminateConnection)
+        bytesWritten += authTransformResult.BytesWritten;
+        if (authTransformResult.ShouldTerminateConnection)
         {
             return CreateBufferProcessingTerminateResult(bytesWritten);
-        }
-
-        if (!authBridgeResult.HandledByBridge)
-        {
-            if (direction == "client->world" && loopState.RetailPostAuthClientTranslator is not null)
-            {
-                if (!loopState.RetailPostAuthClientTranslator.TryTransform(
-                        buffer,
-                        writer,
-                        onDroppedOpcode: (opcode, payloadBytes) =>
-                        {
-                            _logger.LogInformation(
-                                "[WorldProxy][MAP] Unmapped Retail opcode dropped. ConnectionId={ConnectionId}, Opcode=0x{Opcode:X8}, PayloadBytes={PayloadBytes}",
-                                connectionId,
-                                opcode,
-                                payloadBytes);
-                        },
-                        out long transformedBytes,
-                        out string? transformError))
-                {
-                    _logger.LogWarning(
-                        "[WorldProxy][MAP] Failed to translate Retail post-auth packet. ConnectionId={ConnectionId}, Error={Error}",
-                        connectionId,
-                        transformError ?? "<unknown>");
-
-                    return CreateBufferProcessingTerminateResult(bytesWritten);
-                }
-
-                bytesWritten += transformedBytes;
-            }
-            else if (direction == "world->client" && loopState.AcorePostAuthServerTranslator is not null)
-            {
-                if (!loopState.AcorePostAuthServerTranslator.TryTransform(buffer, writer, out long transformedBytes, out string? transformError))
-                {
-                    _logger.LogWarning(
-                        "[WorldProxy][MAP] Failed to translate AC post-auth packet. ConnectionId={ConnectionId}, Error={Error}",
-                        connectionId,
-                        transformError ?? "<unknown>");
-
-                    return CreateBufferProcessingTerminateResult(bytesWritten);
-                }
-
-                bytesWritten += transformedBytes;
-            }
-            else
-            {
-                foreach (ReadOnlyMemory<byte> segment in buffer)
-                {
-                    writer.Write(segment.Span);
-                    bytesWritten += segment.Length;
-                }
-            }
         }
 
         FlushResult flushResult = await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
