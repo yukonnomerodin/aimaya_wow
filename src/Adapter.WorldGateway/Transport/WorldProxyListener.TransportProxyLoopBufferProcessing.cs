@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.IO.Pipelines;
-using Microsoft.Extensions.Logging;
 
 namespace Adapter.WorldGateway;
 
@@ -59,35 +58,20 @@ public sealed partial class WorldProxyListener
             return CreateBufferProcessingTerminateResult(bytesWritten);
         }
 
-        FlushResult flushResult = await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
-        if (flushResult.IsCanceled || flushResult.IsCompleted)
-        {
-            return CreateBufferProcessingBreakRelayResult(bytesWritten);
-        }
-
-        if (direction == "client->world" && bridgeState.ConsumeClientRequestedDisconnect())
-        {
-            _logger.LogInformation(
-                "[WorldProxy][MAP] Client requested world disconnect. ConnectionId={ConnectionId}, Direction={Direction}. Ending relay side.",
-                connectionId,
-                direction);
-            return CreateBufferProcessingBreakRelayResult(bytesWritten);
-        }
-
-        AckGateDeferredFlushResult ackGateResult = await TryHandleAckGateAndDeferredFlushAsync(
+        ProxyBufferFlushDisconnectAckStageResult flushDisconnectAckResult = await TryRunProxyBufferFlushDisconnectAckStageAsync(
                 connectionId,
                 direction,
                 writer,
                 bridgeState,
                 cancellationToken)
             .ConfigureAwait(false);
-        bytesWritten += ackGateResult.BytesWritten;
-        if (ackGateResult.ShouldTerminateConnection)
+        bytesWritten += flushDisconnectAckResult.BytesWritten;
+        if (flushDisconnectAckResult.ShouldTerminateConnection)
         {
             return CreateBufferProcessingTerminateResult(bytesWritten);
         }
 
-        if (ackGateResult.ShouldBreakRelay)
+        if (flushDisconnectAckResult.ShouldBreakRelay)
         {
             return CreateBufferProcessingBreakRelayResult(bytesWritten);
         }
