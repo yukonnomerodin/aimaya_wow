@@ -11,17 +11,11 @@ public sealed partial class WorldProxyListener
         CancellationToken cancellationToken)
     {
         AckGateWaitAndFlushTriggerResult ackGateResult = ResolveAckGateWaitAndFlushTrigger(connectionId, bridgeState);
-        if (ackGateResult.ShouldTerminateConnection)
-        {
-            return CreateAckGateTerminateResult(bytesWritten: 0);
-        }
-
-        bridgeState.MarkDeferredFlushPath(ackGateResult.DeferredFlushPath);
-        return await TryHandleAckGateDeferredResultPathAsync(
+        return await TryHandleResolvedAckGateOrchestrationAsync(
                 connectionId,
                 writer,
                 bridgeState,
-                ackGateResult.ShouldFlushDeferredNow,
+                ackGateResult,
                 cancellationToken)
             .ConfigureAwait(false);
     }
