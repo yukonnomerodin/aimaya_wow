@@ -4,7 +4,13 @@ docs/**
 docs/architecture/**
 docs/handshake/**
 artifacts/
-scripts/
+scripts/*
+!scripts/calibrate_world_probe_perf_budget.ps1
+!scripts/run_world_probe_perf_gate.ps1
+!scripts/run_world_probe_runtime_error_budget_gate.ps1
+!scripts/run_world_probe_scale_profiles.ps1
+!scripts/run_world_probe_capacity_benchmark.ps1
+!scripts/start_retail_gateways.ps1
 
 # Build artifacts
 **/bin/

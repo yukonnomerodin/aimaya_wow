@@ -9,7 +9,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-RUNTIME-ERROR-BUDGET-CAPACITY-107"
+        default: "M2-R6-CI-CAPACITY-BENCHMARK-SLO-PROMOTION-108"
       iterations:
         description: "Target successful probe iterations"
         required: true
@@ -25,11 +25,11 @@ on:
       p95_gate_ms:
         description: "p95 latency gate in ms (0 disables)"
         required: true
-        default: "600"
+        default: "560"
       max_gate_ms:
         description: "max latency gate in ms (0 disables)"
         required: true
-        default: "700"
+        default: "650"
       max_failure_rate_pct:
         description: "max probe failure rate in percent"
         required: true
@@ -48,12 +48,12 @@ jobs:
     name: Perf Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-RUNTIME-ERROR-BUDGET-CAPACITY-107' }}
+      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-CI-CAPACITY-BENCHMARK-SLO-PROMOTION-108' }}
       PERF_ITERATIONS: ${{ github.event.inputs.iterations || '30' }}
       PERF_PARALLELISM: ${{ github.event.inputs.parallelism || '4' }}
       PERF_P50_GATE_MS: ${{ github.event.inputs.p50_gate_ms || '500' }}
-      PERF_P95_GATE_MS: ${{ github.event.inputs.p95_gate_ms || '600' }}
-      PERF_MAX_GATE_MS: ${{ github.event.inputs.max_gate_ms || '700' }}
+      PERF_P95_GATE_MS: ${{ github.event.inputs.p95_gate_ms || '560' }}
+      PERF_MAX_GATE_MS: ${{ github.event.inputs.max_gate_ms || '650' }}
       PERF_MAX_FAILURE_RATE_PCT: ${{ github.event.inputs.max_failure_rate_pct || '8.0' }}
       PERF_MAX_DB_TIMEOUT_RATE_PCT: ${{ github.event.inputs.max_db_timeout_rate_pct || '0.5' }}
       PERF_MAX_DIAG_QUEUE_SAT_RATE_PCT: ${{ github.event.inputs.max_diag_queue_saturation_rate_pct || '1.0' }}

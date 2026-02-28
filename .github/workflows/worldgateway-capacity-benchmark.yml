@@ -1,0 +1,113 @@
+name: WorldGateway Capacity Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      hypothesis_id:
+        description: "HypothesisId used for gateway start and summary metadata"
+        required: false
+        default: "M2-R6-CI-CAPACITY-BENCHMARK-SLO-PROMOTION-108"
+      rounds:
+        description: "How many benchmark rounds to run"
+        required: true
+        default: "3"
+      iterations_per_profile:
+        description: "Target successful probe iterations per profile"
+        required: true
+        default: "12"
+      allow_failures_per_profile:
+        description: "Allowed failed attempts per profile (-1 = auto from failure-rate gate)"
+        required: true
+        default: "-1"
+      profiles:
+        description: "Parallel profiles CSV"
+        required: true
+        default: "1,4,8,16,32"
+      p95_safety_multiplier:
+        description: "Multiplier for recommended p95 gate"
+        required: true
+        default: "1.20"
+      max_safety_multiplier:
+        description: "Multiplier for recommended max gate"
+        required: true
+        default: "1.15"
+      failure_rate_safety_delta_pct:
+        description: "Delta for recommended failure-rate gate"
+        required: true
+        default: "2.0"
+      max_failure_rate_pct_p1:
+        description: "max probe failure rate in percent for profile p1"
+        required: true
+        default: "8.0"
+      max_failure_rate_pct_p4:
+        description: "max probe failure rate in percent for profile p4"
+        required: true
+        default: "10.0"
+      max_failure_rate_pct_p8:
+        description: "max probe failure rate in percent for profile p8"
+        required: true
+        default: "15.0"
+      max_failure_rate_pct_p16:
+        description: "max probe failure rate in percent for profile p16"
+        required: true
+        default: "24.0"
+      max_failure_rate_pct_p32:
+        description: "max probe failure rate in percent for profile p32"
+        required: true
+        default: "28.0"
+
+jobs:
+  capacity-benchmark:
+    name: Capacity Benchmark (Self-Hosted Windows)
+    runs-on: [self-hosted, windows]
+    env:
+      CAPACITY_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-CI-CAPACITY-BENCHMARK-SLO-PROMOTION-108' }}
+      CAPACITY_ROUNDS: ${{ github.event.inputs.rounds || '3' }}
+      CAPACITY_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '12' }}
+      CAPACITY_ALLOW_FAILURES_PER_PROFILE: ${{ github.event.inputs.allow_failures_per_profile || '-1' }}
+      CAPACITY_PROFILES: ${{ github.event.inputs.profiles || '1,4,8,16,32' }}
+      CAPACITY_P95_SAFETY_MULTIPLIER: ${{ github.event.inputs.p95_safety_multiplier || '1.20' }}
+      CAPACITY_MAX_SAFETY_MULTIPLIER: ${{ github.event.inputs.max_safety_multiplier || '1.15' }}
+      CAPACITY_FAILURE_RATE_SAFETY_DELTA_PCT: ${{ github.event.inputs.failure_rate_safety_delta_pct || '2.0' }}
+      CAPACITY_MAX_FAILURE_RATE_PCT_P1: ${{ github.event.inputs.max_failure_rate_pct_p1 || '8.0' }}
+      CAPACITY_MAX_FAILURE_RATE_PCT_P4: ${{ github.event.inputs.max_failure_rate_pct_p4 || '10.0' }}
+      CAPACITY_MAX_FAILURE_RATE_PCT_P8: ${{ github.event.inputs.max_failure_rate_pct_p8 || '15.0' }}
+      CAPACITY_MAX_FAILURE_RATE_PCT_P16: ${{ github.event.inputs.max_failure_rate_pct_p16 || '24.0' }}
+      CAPACITY_MAX_FAILURE_RATE_PCT_P32: ${{ github.event.inputs.max_failure_rate_pct_p32 || '28.0' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build WorldGateway
+        shell: powershell
+        run: dotnet build src/Adapter.WorldGateway/Adapter.WorldGateway.csproj
+
+      - name: Start Retail Gateways
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_retail_gateways.ps1 `
+            -HypothesisId "${{ env.CAPACITY_HYPOTHESIS_ID }}"
+
+      - name: Run Capacity Benchmark
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_world_probe_capacity_benchmark.ps1 `
+            -HypothesisId "${{ env.CAPACITY_HYPOTHESIS_ID }}" `
+            -Rounds ${{ env.CAPACITY_ROUNDS }} `
+            -IterationsPerProfile ${{ env.CAPACITY_ITERATIONS_PER_PROFILE }} `
+            -AllowFailuresPerProfile ${{ env.CAPACITY_ALLOW_FAILURES_PER_PROFILE }} `
+            -Profiles "${{ env.CAPACITY_PROFILES }}" `
+            -P95SafetyMultiplier ${{ env.CAPACITY_P95_SAFETY_MULTIPLIER }} `
+            -MaxSafetyMultiplier ${{ env.CAPACITY_MAX_SAFETY_MULTIPLIER }} `
+            -FailureRateSafetyDeltaPercent ${{ env.CAPACITY_FAILURE_RATE_SAFETY_DELTA_PCT }} `
+            -MaxFailureRatePctP1 ${{ env.CAPACITY_MAX_FAILURE_RATE_PCT_P1 }} `
+            -MaxFailureRatePctP4 ${{ env.CAPACITY_MAX_FAILURE_RATE_PCT_P4 }} `
+            -MaxFailureRatePctP8 ${{ env.CAPACITY_MAX_FAILURE_RATE_PCT_P8 }} `
+            -MaxFailureRatePctP16 ${{ env.CAPACITY_MAX_FAILURE_RATE_PCT_P16 }} `
+            -MaxFailureRatePctP32 ${{ env.CAPACITY_MAX_FAILURE_RATE_PCT_P32 }}

@@ -9,11 +9,35 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-RUNTIME-ERROR-BUDGET-CAPACITY-107"
+        default: "M2-R6-CI-CAPACITY-BENCHMARK-SLO-PROMOTION-108"
       iterations_per_profile:
         description: "Target successful probe iterations per profile"
         required: true
         default: "16"
+      max_failure_rate_pct_p1:
+        description: "max probe failure rate in percent for profile p1"
+        required: true
+        default: "8.0"
+      max_failure_rate_pct_p4:
+        description: "max probe failure rate in percent for profile p4"
+        required: true
+        default: "10.0"
+      max_failure_rate_pct_p8:
+        description: "max probe failure rate in percent for profile p8"
+        required: true
+        default: "15.0"
+      max_failure_rate_pct_p16:
+        description: "max probe failure rate in percent for profile p16"
+        required: true
+        default: "24.0"
+      max_failure_rate_pct_p32:
+        description: "max probe failure rate in percent for profile p32"
+        required: true
+        default: "28.0"
+      scale_profile_relay_failure_rate_budgets:
+        description: "runtime gate per-profile relay budgets (parallelism:percent CSV)"
+        required: true
+        default: "1:8,4:10,8:15,16:24,32:28"
       max_relay_failure_rate_pct:
         description: "max relay failure rate in percent"
         required: true
@@ -32,8 +56,14 @@ jobs:
     name: Scale Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      SCALE_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-RUNTIME-ERROR-BUDGET-CAPACITY-107' }}
+      SCALE_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-CI-CAPACITY-BENCHMARK-SLO-PROMOTION-108' }}
       SCALE_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '16' }}
+      SCALE_MAX_FAILURE_RATE_PCT_P1: ${{ github.event.inputs.max_failure_rate_pct_p1 || '8.0' }}
+      SCALE_MAX_FAILURE_RATE_PCT_P4: ${{ github.event.inputs.max_failure_rate_pct_p4 || '10.0' }}
+      SCALE_MAX_FAILURE_RATE_PCT_P8: ${{ github.event.inputs.max_failure_rate_pct_p8 || '15.0' }}
+      SCALE_MAX_FAILURE_RATE_PCT_P16: ${{ github.event.inputs.max_failure_rate_pct_p16 || '24.0' }}
+      SCALE_MAX_FAILURE_RATE_PCT_P32: ${{ github.event.inputs.max_failure_rate_pct_p32 || '28.0' }}
+      SCALE_PROFILE_RELAY_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_relay_failure_rate_budgets || '1:8,4:10,8:15,16:24,32:28' }}
       SCALE_MAX_RELAY_FAILURE_RATE_PCT: ${{ github.event.inputs.max_relay_failure_rate_pct || '30.0' }}
       SCALE_MAX_DB_TIMEOUT_RATE_PCT: ${{ github.event.inputs.max_db_timeout_rate_pct || '0.5' }}
       SCALE_MAX_DIAG_QUEUE_SAT_RATE_PCT: ${{ github.event.inputs.max_diag_queue_saturation_rate_pct || '1.0' }}
@@ -63,6 +93,11 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_world_probe_scale_profiles.ps1 `
             -HypothesisId "${{ env.SCALE_HYPOTHESIS_ID }}" `
             -IterationsPerProfile ${{ env.SCALE_ITERATIONS_PER_PROFILE }} `
+            -MaxFailureRatePctP1 ${{ env.SCALE_MAX_FAILURE_RATE_PCT_P1 }} `
+            -MaxFailureRatePctP4 ${{ env.SCALE_MAX_FAILURE_RATE_PCT_P4 }} `
+            -MaxFailureRatePctP8 ${{ env.SCALE_MAX_FAILURE_RATE_PCT_P8 }} `
+            -MaxFailureRatePctP16 ${{ env.SCALE_MAX_FAILURE_RATE_PCT_P16 }} `
+            -MaxFailureRatePctP32 ${{ env.SCALE_MAX_FAILURE_RATE_PCT_P32 }} `
             -Profiles "1,4,8,16,32"
 
       - name: Run Runtime Error Budget Gate
@@ -72,5 +107,6 @@ jobs:
             -HypothesisId "${{ env.SCALE_HYPOTHESIS_ID }}" `
             -ScaleSummaryPath "docs/handshake/runlogs/probe_scale_profiles.latest.json" `
             -MaxRelayFailureRatePercent ${{ env.SCALE_MAX_RELAY_FAILURE_RATE_PCT }} `
+            -ScaleProfileRelayFailureRateBudgets "${{ env.SCALE_PROFILE_RELAY_FAILURE_RATE_BUDGETS }}" `
             -MaxDbTimeoutRatePercent ${{ env.SCALE_MAX_DB_TIMEOUT_RATE_PCT }} `
             -MaxDiagnosticsQueueSaturationRatePercent ${{ env.SCALE_MAX_DIAG_QUEUE_SAT_RATE_PCT }}
