@@ -18,10 +18,7 @@ public sealed partial class WorldProxyListener
     {
         if (direction != "world->client" || !bridgeState.IsAwaitingEnterEncryptedAck)
         {
-            return new AckGateDeferredFlushResult(
-                ShouldTerminateConnection: false,
-                ShouldBreakRelay: false,
-                BytesWritten: 0);
+            return CreateAckGateContinueResult(bytesWritten: 0);
         }
 
         return await TryHandleAckGateWorldToClientAsync(
