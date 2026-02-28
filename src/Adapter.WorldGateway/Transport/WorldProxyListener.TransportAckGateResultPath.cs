@@ -12,9 +12,10 @@ public sealed partial class WorldProxyListener
         CancellationToken cancellationToken)
     {
         long bytesWritten = 0;
-        if (!shouldFlushDeferredNow ||
-            !bridgeState.TryTakeDeferredPostAuthPayload(out byte[] deferredPayload, out string stagedOpcodes) ||
-            deferredPayload.Length == 0)
+        if (!TryTakeAckGateDeferredPayload(
+                bridgeState,
+                shouldFlushDeferredNow,
+                out AckGateDeferredPayload deferredPayload))
         {
             return CreateAckGateContinueResult(bytesWritten);
         }
@@ -23,8 +24,8 @@ public sealed partial class WorldProxyListener
                 connectionId,
                 writer,
                 bridgeState,
-                deferredPayload,
-                stagedOpcodes,
+                deferredPayload.Payload,
+                deferredPayload.StagedOpcodes,
                 cancellationToken)
             .ConfigureAwait(false);
         bytesWritten += deferredFlushResult.BytesWritten;
