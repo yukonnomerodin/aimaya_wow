@@ -36,9 +36,7 @@ public sealed partial class WorldProxyListener
         bytesWritten += authBridgeResult.BytesWritten;
         if (authBridgeResult.ShouldTerminateConnection)
         {
-            return new ProxyBufferAuthBridgeAndTransformStageResult(
-                ShouldTerminateConnection: true,
-                BytesWritten: bytesWritten);
+            return CreateAuthBridgeTransformTerminateResult(bytesWritten);
         }
 
         if (!authBridgeResult.HandledByBridge)
@@ -64,9 +62,7 @@ public sealed partial class WorldProxyListener
                         connectionId,
                         transformError ?? "<unknown>");
 
-                    return new ProxyBufferAuthBridgeAndTransformStageResult(
-                        ShouldTerminateConnection: true,
-                        BytesWritten: bytesWritten);
+                    return CreateAuthBridgeTransformTerminateResult(bytesWritten);
                 }
 
                 bytesWritten += transformedBytes;
@@ -80,9 +76,7 @@ public sealed partial class WorldProxyListener
                         connectionId,
                         transformError ?? "<unknown>");
 
-                    return new ProxyBufferAuthBridgeAndTransformStageResult(
-                        ShouldTerminateConnection: true,
-                        BytesWritten: bytesWritten);
+                    return CreateAuthBridgeTransformTerminateResult(bytesWritten);
                 }
 
                 bytesWritten += transformedBytes;
@@ -97,8 +91,6 @@ public sealed partial class WorldProxyListener
             }
         }
 
-        return new ProxyBufferAuthBridgeAndTransformStageResult(
-            ShouldTerminateConnection: false,
-            BytesWritten: bytesWritten);
+        return CreateAuthBridgeTransformContinueResult(bytesWritten);
     }
 }
