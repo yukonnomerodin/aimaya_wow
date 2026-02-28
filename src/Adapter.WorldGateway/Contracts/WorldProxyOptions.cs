@@ -98,6 +98,8 @@ public sealed class WorldProxyOptions
 
     public bool ProbeExplicitBootstrapFlushMarker { get; init; } = false;
 
+    public bool EnablePerFrameDeferredHashEvidence { get; init; } = false;
+
     public string ProbeRetailSequencePreludePayloadHex { get; init; } = string.Empty;
 
     public string ProbeAuthResponseOpcodeOverride { get; init; } = string.Empty;
@@ -217,6 +219,9 @@ public sealed class WorldProxyOptions
 
     [Range(0, int.MaxValue)]
     public int AuthAccountIdFallback { get; init; } = 0;
+
+    [Range(100, 30000)]
+    public int AuthBridgeDbTimeoutMs { get; init; } = 3000;
 
     public bool EnableAcoreToRetailAuthChallengeBridgeProbe { get; init; } = true;
 

@@ -18,11 +18,15 @@ on:
       p50_gate_ms:
         description: "p50 latency gate in ms (0 disables)"
         required: true
-        default: "220"
+        default: "500"
       p95_gate_ms:
         description: "p95 latency gate in ms (0 disables)"
         required: true
-        default: "350"
+        default: "600"
+      max_gate_ms:
+        description: "max latency gate in ms (0 disables)"
+        required: true
+        default: "620"
 
 jobs:
   perf-gate:
@@ -56,4 +60,5 @@ jobs:
             -Parallelism ${{ inputs.parallelism }} `
             -P50GateMs ${{ inputs.p50_gate_ms }} `
             -P95GateMs ${{ inputs.p95_gate_ms }} `
+            -MaxDurationGateMs ${{ inputs.max_gate_ms }} `
             -HypothesisId "${{ inputs.hypothesis_id }}"

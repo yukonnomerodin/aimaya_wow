@@ -1,0 +1,48 @@
+name: WorldGateway Scale Profiles Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      hypothesis_id:
+        description: "HypothesisId used for gateway start and summary metadata"
+        required: false
+        default: "M2-R5-PERF-GATE-HOTPATH-PARALLEL-104"
+      iterations_per_profile:
+        description: "Target successful probe iterations per profile"
+        required: true
+        default: "16"
+
+jobs:
+  scale-gate:
+    name: Scale Gate (Self-Hosted Windows)
+    runs-on: [self-hosted, windows]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build WorldGateway
+        shell: powershell
+        run: dotnet build src/Adapter.WorldGateway/Adapter.WorldGateway.csproj
+
+      - name: Start Retail Gateways
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start_retail_gateways.ps1 `
+            -HypothesisId "${{ inputs.hypothesis_id }}"
+
+      - name: Run Scale Profiles Gate (1/4/8/16)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_world_probe_scale_profiles.ps1 `
+            -HypothesisId "${{ inputs.hypothesis_id }}" `
+            -IterationsPerProfile ${{ inputs.iterations_per_profile }} `
+            -Profiles "1,4,8,16"

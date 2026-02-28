@@ -96,8 +96,9 @@ public sealed partial class WorldProxyListener
                     BytesWritten: bytesWritten);
             }
 
-            string plainSha256 = ComputeSha256Hex(frame.Frame);
-            string protectedSha256 = ComputeSha256Hex(protectedFrame);
+            bool shouldComputeFrameHashes = _options.EnablePerFrameDeferredHashEvidence || frameIndex == 0;
+            string plainSha256 = shouldComputeFrameHashes ? ComputeSha256Hex(frame.Frame) : "<skipped>";
+            string protectedSha256 = shouldComputeFrameHashes ? ComputeSha256Hex(protectedFrame) : "<skipped>";
             string protectedTagHex = Convert.ToHexString(protectedFrame.AsSpan(4, 12));
             DeferredFrameParityResult deferredParity = new(
                 Status: "not_evaluated",

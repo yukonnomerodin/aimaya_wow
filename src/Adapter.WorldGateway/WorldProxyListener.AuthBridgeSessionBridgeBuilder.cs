@@ -14,13 +14,17 @@ public sealed partial class WorldProxyListener
         WorldProxyBridgeState bridgeState,
         CancellationToken cancellationToken)
     {
+        using var dbCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        dbCts.CancelAfter(_options.AuthBridgeDbTimeoutMs);
+        CancellationToken dbToken = dbCts.Token;
+
         try
         {
             int accountId = retailFrame.AccountId;
             string accountIdSource = "retail_payload";
             if (accountId <= 0)
             {
-                (accountId, accountIdSource) = await ResolveMissingRetailAccountIdAsync(cancellationToken).ConfigureAwait(false);
+                (accountId, accountIdSource) = await ResolveMissingRetailAccountIdAsync(dbToken).ConfigureAwait(false);
                 if (accountId > 0)
                 {
                     _logger.LogWarning(
@@ -42,13 +46,13 @@ public sealed partial class WorldProxyListener
                 }
             }
 
-            AcoreSessionMaterial? material = await _worldSessionMaterialRepository.TryReadSessionMaterialByAccountIdAsync(accountId, cancellationToken).ConfigureAwait(false);
+            AcoreSessionMaterial? material = await _worldSessionMaterialRepository.TryReadSessionMaterialByAccountIdAsync(accountId, dbToken).ConfigureAwait(false);
             if (material is null && accountIdSource == "config:AuthAccountIdFallback")
             {
-                int? latestAccountId = await _worldSessionMaterialRepository.TryReadLatestSessionMaterialAccountIdAsync(cancellationToken).ConfigureAwait(false);
+                int? latestAccountId = await _worldSessionMaterialRepository.TryReadLatestSessionMaterialAccountIdAsync(dbToken).ConfigureAwait(false);
                 if (latestAccountId is > 0 && latestAccountId.Value != accountId)
                 {
-                    AcoreSessionMaterial? latestMaterial = await _worldSessionMaterialRepository.TryReadSessionMaterialByAccountIdAsync(latestAccountId.Value, cancellationToken).ConfigureAwait(false);
+                    AcoreSessionMaterial? latestMaterial = await _worldSessionMaterialRepository.TryReadSessionMaterialByAccountIdAsync(latestAccountId.Value, dbToken).ConfigureAwait(false);
                     if (latestMaterial is not null)
                     {
                         accountId = latestAccountId.Value;
@@ -121,6 +125,24 @@ public sealed partial class WorldProxyListener
 
             CryptographicOperations.ZeroMemory(digest);
             return new AcoreAuthSessionBridgeResult(frame, authCrypt, account.SessionKey, account.BnetKeyData64, accountId, accountIdSource);
+        }
+        catch (OperationCanceledException) when (dbCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            bridgeState.SetEvidenceContext("DB", "db auth bridge timeout gate");
+            bridgeState.MarkTemporalInvariant(
+                name: "db_parity_gate",
+                passed: false,
+                expected: "DB/auth bridge queries complete within configured timeout budget.",
+                actual: $"auth bridge DB timeout after {_options.AuthBridgeDbTimeoutMs}ms.");
+            bridgeState.MarkTemporalInvariant(
+                name: "db_auth_bridge_timeout_gate",
+                passed: false,
+                expected: "DB/auth bridge should not exceed timeout budget.",
+                actual: $"timeout_ms={_options.AuthBridgeDbTimeoutMs}");
+            _logger.LogWarning(
+                "[WorldProxy][DB-GATE] Auth bridge DB timeout. TimeoutMs={TimeoutMs}. Rejecting AUTH_SESSION bridge for this connection.",
+                _options.AuthBridgeDbTimeoutMs);
+            return null;
         }
         catch (Exception ex) when (ex is MySqlException or IOException or CryptographicException or InvalidOperationException)
         {

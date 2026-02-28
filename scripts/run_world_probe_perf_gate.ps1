@@ -113,7 +113,7 @@ try {
                 Set-StrictMode -Version Latest
                 $ErrorActionPreference = "Stop"
 
-                $probeOutput = & $ResolvedProbeScript `
+                $probeOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File $ResolvedProbeScript `
                     -ServerHost $ServerHost `
                     -Port $Port `
                     -AccountId $AccountId `
@@ -250,7 +250,10 @@ if (($MaxDurationGateMs -gt 0) -and ($null -ne $max) -and ($max -gt $MaxDuration
     $gateReasons.Add("max_duration_gate_failed: gate_ms=$MaxDurationGateMs actual_ms=$max") | Out-Null
 }
 
-$summary = [PSCustomObject]@{
+$gateReasonArray = [string[]]$gateReasons.ToArray()
+$failureArray = [object[]]$failureRows.ToArray()
+
+$summary = [ordered]@{
     timestamp_utc = [DateTimeOffset]::UtcNow.ToString("o")
     server_host = $ServerHost
     port = $Port
@@ -269,12 +272,14 @@ $summary = [PSCustomObject]@{
     max_ms = $max
     durations_ms = $durationArray
     gate_passed = $gatePassed
-    gate_reasons = $gateReasons
+    gate_reasons = $gateReasonArray
+    failures = $failureArray
     duration_total_ms = [Math]::Max(0, [int]($finishedAt - $startedAt).TotalMilliseconds)
 }
 
-($summary | ConvertTo-Json -Depth 8) | Set-Content -Path $resolvedSummaryPath -Encoding UTF8
-$summary | ConvertTo-Json -Depth 8
+$summaryJson = ($summary | ConvertTo-Json -Depth 8)
+$summaryJson | Set-Content -Path $resolvedSummaryPath -Encoding UTF8
+$summaryJson
 
 if (-not $gatePassed) {
     exit 1

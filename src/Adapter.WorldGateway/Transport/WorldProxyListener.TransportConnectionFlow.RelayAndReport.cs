@@ -107,12 +107,20 @@ public sealed partial class WorldProxyListener
         }
         catch (Exception ex)
         {
+            string clientToWorldStatus = downstreamToUpstream.Status.ToString();
+            string worldToClientStatus = upstreamToDownstream.Status.ToString();
+            string clientToWorldError = downstreamToUpstream.Exception?.GetBaseException().Message ?? "<none>";
+            string worldToClientError = upstreamToDownstream.Exception?.GetBaseException().Message ?? "<none>";
             _logger.LogWarning(
                 ex,
-                "Proxy loop error: ConnectionId={ConnectionId}, Downstream={DownstreamRemote}, Upstream={UpstreamRemote}",
+                "Proxy loop error: ConnectionId={ConnectionId}, Downstream={DownstreamRemote}, Upstream={UpstreamRemote}, ClientToWorldStatus={ClientToWorldStatus}, WorldToClientStatus={WorldToClientStatus}, ClientToWorldError={ClientToWorldError}, WorldToClientError={WorldToClientError}",
                 connectionId,
                 downstreamRemote,
-                upstreamRemote);
+                upstreamRemote,
+                clientToWorldStatus,
+                worldToClientStatus,
+                clientToWorldError,
+                worldToClientError);
         }
         finally
         {
