@@ -76,222 +76,83 @@ public sealed partial class WorldProxyListener
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeRetailSequencePreludePayloadHex))
-        {
-            _probeRetailSequencePreludePayloadProvided = true;
-            _probeRetailSequencePreludePayloadValid = HexPayloadLoader.TryParseFixedLengthHex(
-                _options.ProbeRetailSequencePreludePayloadHex,
-                expectedLengthBytes: 4,
-                out byte[] parsedPreludePayload,
-                out string? preludeParseError);
-            if (_probeRetailSequencePreludePayloadValid)
-            {
-                _probeRetailSequencePreludePayload = parsedPreludePayload;
-            }
-            else
-            {
-                _probeRetailSequencePreludePayloadParseError = preludeParseError;
-            }
-        }
+        ProbeFixedHexPayloadLoadResult preludePayloadLoad = LoadOptionalFixedLengthHexPayload(
+            _options.ProbeRetailSequencePreludePayloadHex,
+            expectedLengthBytes: 4,
+            defaultPayload: _probeRetailSequencePreludePayload);
+        _probeRetailSequencePreludePayloadProvided = preludePayloadLoad.Provided;
+        _probeRetailSequencePreludePayloadValid = preludePayloadLoad.Valid;
+        _probeRetailSequencePreludePayload = preludePayloadLoad.Payload;
+        _probeRetailSequencePreludePayloadParseError = preludePayloadLoad.Error;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeAuthResponseReplayPayloadHexPath))
-        {
-            _probeAuthResponseReplayPayloadProvided = true;
-            _probeAuthResponseReplayPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeAuthResponseReplayPayloadHexPath,
-                out byte[] parsedAuthResponsePayload,
-                out string? replayPayloadError,
-                out string? resolvedReplayPayloadPath);
-            if (_probeAuthResponseReplayPayloadValid)
-            {
-                _probeAuthResponseReplayPayload = parsedAuthResponsePayload;
-                _probeAuthResponseReplayPayloadResolvedPath = resolvedReplayPayloadPath;
-            }
-            else
-            {
-                _probeAuthResponseReplayPayloadParseError = replayPayloadError;
-                _probeAuthResponseReplayPayloadResolvedPath = resolvedReplayPayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult authResponseReplayPayloadLoad = LoadOptionalFileHexPayload(_options.ProbeAuthResponseReplayPayloadHexPath);
+        _probeAuthResponseReplayPayloadProvided = authResponseReplayPayloadLoad.Provided;
+        _probeAuthResponseReplayPayloadValid = authResponseReplayPayloadLoad.Valid;
+        _probeAuthResponseReplayPayload = authResponseReplayPayloadLoad.Payload;
+        _probeAuthResponseReplayPayloadParseError = authResponseReplayPayloadLoad.Error;
+        _probeAuthResponseReplayPayloadResolvedPath = authResponseReplayPayloadLoad.ResolvedPath;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeAuthResponseReplayCompressedPayloadHexPath))
-        {
-            _probeAuthResponseReplayCompressedPayloadProvided = true;
-            _probeAuthResponseReplayCompressedPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeAuthResponseReplayCompressedPayloadHexPath,
-                out byte[] parsedCompressedAuthResponsePayload,
-                out string? replayCompressedPayloadError,
-                out string? resolvedReplayCompressedPayloadPath);
-            if (_probeAuthResponseReplayCompressedPayloadValid)
-            {
-                _probeAuthResponseReplayCompressedPayload = parsedCompressedAuthResponsePayload;
-                _probeAuthResponseReplayCompressedPayloadResolvedPath = resolvedReplayCompressedPayloadPath;
-            }
-            else
-            {
-                _probeAuthResponseReplayCompressedPayloadParseError = replayCompressedPayloadError;
-                _probeAuthResponseReplayCompressedPayloadResolvedPath = resolvedReplayCompressedPayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult authResponseReplayCompressedPayloadLoad = LoadOptionalFileHexPayload(_options.ProbeAuthResponseReplayCompressedPayloadHexPath);
+        _probeAuthResponseReplayCompressedPayloadProvided = authResponseReplayCompressedPayloadLoad.Provided;
+        _probeAuthResponseReplayCompressedPayloadValid = authResponseReplayCompressedPayloadLoad.Valid;
+        _probeAuthResponseReplayCompressedPayload = authResponseReplayCompressedPayloadLoad.Payload;
+        _probeAuthResponseReplayCompressedPayloadParseError = authResponseReplayCompressedPayloadLoad.Error;
+        _probeAuthResponseReplayCompressedPayloadResolvedPath = authResponseReplayCompressedPayloadLoad.ResolvedPath;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeSetTimeZoneInformationPayloadHexPath))
-        {
-            _probeSetTimeZoneInformationPayloadProvided = true;
-            _probeSetTimeZoneInformationPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeSetTimeZoneInformationPayloadHexPath,
-                out byte[] parsedTimeZonePayload,
-                out string? timeZonePayloadError,
-                out string? resolvedTimeZonePayloadPath);
-            if (_probeSetTimeZoneInformationPayloadValid)
-            {
-                _probeSetTimeZoneInformationPayload = parsedTimeZonePayload;
-                _probeSetTimeZoneInformationPayloadResolvedPath = resolvedTimeZonePayloadPath;
-            }
-            else
-            {
-                _probeSetTimeZoneInformationPayloadParseError = timeZonePayloadError;
-                _probeSetTimeZoneInformationPayloadResolvedPath = resolvedTimeZonePayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult timeZonePayloadLoad = LoadOptionalFileHexPayload(_options.ProbeSetTimeZoneInformationPayloadHexPath);
+        _probeSetTimeZoneInformationPayloadProvided = timeZonePayloadLoad.Provided;
+        _probeSetTimeZoneInformationPayloadValid = timeZonePayloadLoad.Valid;
+        _probeSetTimeZoneInformationPayload = timeZonePayloadLoad.Payload;
+        _probeSetTimeZoneInformationPayloadParseError = timeZonePayloadLoad.Error;
+        _probeSetTimeZoneInformationPayloadResolvedPath = timeZonePayloadLoad.ResolvedPath;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeFeatureSystemStatusGlueScreenPayloadHexPath))
-        {
-            _probeFeatureSystemStatusGlueScreenPayloadProvided = true;
-            _probeFeatureSystemStatusGlueScreenPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeFeatureSystemStatusGlueScreenPayloadHexPath,
-                out byte[] parsedFeaturePayload,
-                out string? featurePayloadError,
-                out string? resolvedFeaturePayloadPath);
-            if (_probeFeatureSystemStatusGlueScreenPayloadValid)
-            {
-                _probeFeatureSystemStatusGlueScreenPayload = parsedFeaturePayload;
-                _probeFeatureSystemStatusGlueScreenPayloadResolvedPath = resolvedFeaturePayloadPath;
-            }
-            else
-            {
-                _probeFeatureSystemStatusGlueScreenPayloadParseError = featurePayloadError;
-                _probeFeatureSystemStatusGlueScreenPayloadResolvedPath = resolvedFeaturePayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult featurePayloadLoad = LoadOptionalFileHexPayload(_options.ProbeFeatureSystemStatusGlueScreenPayloadHexPath);
+        _probeFeatureSystemStatusGlueScreenPayloadProvided = featurePayloadLoad.Provided;
+        _probeFeatureSystemStatusGlueScreenPayloadValid = featurePayloadLoad.Valid;
+        _probeFeatureSystemStatusGlueScreenPayload = featurePayloadLoad.Payload;
+        _probeFeatureSystemStatusGlueScreenPayloadParseError = featurePayloadLoad.Error;
+        _probeFeatureSystemStatusGlueScreenPayloadResolvedPath = featurePayloadLoad.ResolvedPath;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeMirrorVarsPayloadHexPath))
-        {
-            _probeMirrorVarsPayloadProvided = true;
-            _probeMirrorVarsPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeMirrorVarsPayloadHexPath,
-                out byte[] parsedMirrorVarsPayload,
-                out string? mirrorVarsPayloadError,
-                out string? resolvedMirrorVarsPayloadPath);
-            if (_probeMirrorVarsPayloadValid)
-            {
-                _probeMirrorVarsPayload = parsedMirrorVarsPayload;
-                _probeMirrorVarsPayloadResolvedPath = resolvedMirrorVarsPayloadPath;
-            }
-            else
-            {
-                _probeMirrorVarsPayloadParseError = mirrorVarsPayloadError;
-                _probeMirrorVarsPayloadResolvedPath = resolvedMirrorVarsPayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult mirrorVarsPayloadLoad = LoadOptionalFileHexPayload(_options.ProbeMirrorVarsPayloadHexPath);
+        _probeMirrorVarsPayloadProvided = mirrorVarsPayloadLoad.Provided;
+        _probeMirrorVarsPayloadValid = mirrorVarsPayloadLoad.Valid;
+        _probeMirrorVarsPayload = mirrorVarsPayloadLoad.Payload;
+        _probeMirrorVarsPayloadParseError = mirrorVarsPayloadLoad.Error;
+        _probeMirrorVarsPayloadResolvedPath = mirrorVarsPayloadLoad.ResolvedPath;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeCacheVersionPayloadHexPath))
-        {
-            _probeCacheVersionPayloadProvided = true;
-            _probeCacheVersionPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeCacheVersionPayloadHexPath,
-                out byte[] parsedCacheVersionPayload,
-                out string? cacheVersionPayloadError,
-                out string? resolvedCacheVersionPayloadPath);
-            if (_probeCacheVersionPayloadValid)
-            {
-                _probeCacheVersionPayload = parsedCacheVersionPayload;
-                _probeCacheVersionPayloadResolvedPath = resolvedCacheVersionPayloadPath;
-            }
-            else
-            {
-                _probeCacheVersionPayloadParseError = cacheVersionPayloadError;
-                _probeCacheVersionPayloadResolvedPath = resolvedCacheVersionPayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult cacheVersionPayloadLoad = LoadOptionalFileHexPayload(_options.ProbeCacheVersionPayloadHexPath);
+        _probeCacheVersionPayloadProvided = cacheVersionPayloadLoad.Provided;
+        _probeCacheVersionPayloadValid = cacheVersionPayloadLoad.Valid;
+        _probeCacheVersionPayload = cacheVersionPayloadLoad.Payload;
+        _probeCacheVersionPayloadParseError = cacheVersionPayloadLoad.Error;
+        _probeCacheVersionPayloadResolvedPath = cacheVersionPayloadLoad.ResolvedPath;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeAvailableHotfixesPayloadHexPath))
-        {
-            _probeAvailableHotfixesPayloadProvided = true;
-            _probeAvailableHotfixesPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeAvailableHotfixesPayloadHexPath,
-                out byte[] parsedAvailableHotfixesPayload,
-                out string? availableHotfixesPayloadError,
-                out string? resolvedAvailableHotfixesPayloadPath);
-            if (_probeAvailableHotfixesPayloadValid)
-            {
-                _probeAvailableHotfixesPayload = parsedAvailableHotfixesPayload;
-                _probeAvailableHotfixesPayloadResolvedPath = resolvedAvailableHotfixesPayloadPath;
-            }
-            else
-            {
-                _probeAvailableHotfixesPayloadParseError = availableHotfixesPayloadError;
-                _probeAvailableHotfixesPayloadResolvedPath = resolvedAvailableHotfixesPayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult availableHotfixesPayloadLoad = LoadOptionalFileHexPayload(_options.ProbeAvailableHotfixesPayloadHexPath);
+        _probeAvailableHotfixesPayloadProvided = availableHotfixesPayloadLoad.Provided;
+        _probeAvailableHotfixesPayloadValid = availableHotfixesPayloadLoad.Valid;
+        _probeAvailableHotfixesPayload = availableHotfixesPayloadLoad.Payload;
+        _probeAvailableHotfixesPayloadParseError = availableHotfixesPayloadLoad.Error;
+        _probeAvailableHotfixesPayloadResolvedPath = availableHotfixesPayloadLoad.ResolvedPath;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeAccountDataTimesPayloadHexPath))
-        {
-            _probeAccountDataTimesPayloadProvided = true;
-            _probeAccountDataTimesPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeAccountDataTimesPayloadHexPath,
-                out byte[] parsedAccountDataTimesPayload,
-                out string? accountDataTimesPayloadError,
-                out string? resolvedAccountDataTimesPayloadPath);
-            if (_probeAccountDataTimesPayloadValid)
-            {
-                _probeAccountDataTimesPayload = parsedAccountDataTimesPayload;
-                _probeAccountDataTimesPayloadResolvedPath = resolvedAccountDataTimesPayloadPath;
-            }
-            else
-            {
-                _probeAccountDataTimesPayloadParseError = accountDataTimesPayloadError;
-                _probeAccountDataTimesPayloadResolvedPath = resolvedAccountDataTimesPayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult accountDataTimesPayloadLoad = LoadOptionalFileHexPayload(_options.ProbeAccountDataTimesPayloadHexPath);
+        _probeAccountDataTimesPayloadProvided = accountDataTimesPayloadLoad.Provided;
+        _probeAccountDataTimesPayloadValid = accountDataTimesPayloadLoad.Valid;
+        _probeAccountDataTimesPayload = accountDataTimesPayloadLoad.Payload;
+        _probeAccountDataTimesPayloadParseError = accountDataTimesPayloadLoad.Error;
+        _probeAccountDataTimesPayloadResolvedPath = accountDataTimesPayloadLoad.ResolvedPath;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeTutorialFlagsPayloadHexPath))
-        {
-            _probeTutorialFlagsPayloadProvided = true;
-            _probeTutorialFlagsPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeTutorialFlagsPayloadHexPath,
-                out byte[] parsedTutorialFlagsPayload,
-                out string? tutorialFlagsPayloadError,
-                out string? resolvedTutorialFlagsPayloadPath);
-            if (_probeTutorialFlagsPayloadValid)
-            {
-                _probeTutorialFlagsPayload = parsedTutorialFlagsPayload;
-                _probeTutorialFlagsPayloadResolvedPath = resolvedTutorialFlagsPayloadPath;
-            }
-            else
-            {
-                _probeTutorialFlagsPayloadParseError = tutorialFlagsPayloadError;
-                _probeTutorialFlagsPayloadResolvedPath = resolvedTutorialFlagsPayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult tutorialFlagsPayloadLoad = LoadOptionalFileHexPayload(_options.ProbeTutorialFlagsPayloadHexPath);
+        _probeTutorialFlagsPayloadProvided = tutorialFlagsPayloadLoad.Provided;
+        _probeTutorialFlagsPayloadValid = tutorialFlagsPayloadLoad.Valid;
+        _probeTutorialFlagsPayload = tutorialFlagsPayloadLoad.Payload;
+        _probeTutorialFlagsPayloadParseError = tutorialFlagsPayloadLoad.Error;
+        _probeTutorialFlagsPayloadResolvedPath = tutorialFlagsPayloadLoad.ResolvedPath;
 
-        if (!string.IsNullOrWhiteSpace(_options.ProbeBattleNetConnectionStatusPayloadHexPath))
-        {
-            _probeBattleNetConnectionStatusPayloadProvided = true;
-            _probeBattleNetConnectionStatusPayloadValid = HexPayloadLoader.TryLoadHexPayloadFromFile(
-                _options.ProbeBattleNetConnectionStatusPayloadHexPath,
-                out byte[] parsedBattleNetConnectionStatusPayload,
-                out string? battleNetConnectionStatusPayloadError,
-                out string? resolvedBattleNetConnectionStatusPayloadPath);
-            if (_probeBattleNetConnectionStatusPayloadValid)
-            {
-                _probeBattleNetConnectionStatusPayload = parsedBattleNetConnectionStatusPayload;
-                _probeBattleNetConnectionStatusPayloadResolvedPath = resolvedBattleNetConnectionStatusPayloadPath;
-            }
-            else
-            {
-                _probeBattleNetConnectionStatusPayloadParseError = battleNetConnectionStatusPayloadError;
-                _probeBattleNetConnectionStatusPayloadResolvedPath = resolvedBattleNetConnectionStatusPayloadPath;
-            }
-        }
+        ProbeFileHexPayloadLoadResult battleNetConnectionStatusPayloadLoad = LoadOptionalFileHexPayload(_options.ProbeBattleNetConnectionStatusPayloadHexPath);
+        _probeBattleNetConnectionStatusPayloadProvided = battleNetConnectionStatusPayloadLoad.Provided;
+        _probeBattleNetConnectionStatusPayloadValid = battleNetConnectionStatusPayloadLoad.Valid;
+        _probeBattleNetConnectionStatusPayload = battleNetConnectionStatusPayloadLoad.Payload;
+        _probeBattleNetConnectionStatusPayloadParseError = battleNetConnectionStatusPayloadLoad.Error;
+        _probeBattleNetConnectionStatusPayloadResolvedPath = battleNetConnectionStatusPayloadLoad.ResolvedPath;
     }
 }
