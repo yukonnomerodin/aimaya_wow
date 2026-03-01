@@ -9,7 +9,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-TRANSPORT-STAGE-TUNING-115"
+        default: "M2-R6-SOCKETCLOSE-BUDGET-TIGHTENING-116"
       iterations:
         description: "Target successful probe iterations"
         required: true
@@ -37,7 +37,7 @@ on:
       max_socket_closed_failure_rate_pct:
         description: "max socket-closed probe failure rate in percent (-1 disables)"
         required: true
-        default: "6.0"
+        default: "5.0"
       max_socket_closed_failures:
         description: "max socket-closed failed attempts count (-1 disables)"
         required: true
@@ -64,14 +64,14 @@ jobs:
     name: Perf Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-TRANSPORT-STAGE-TUNING-115' }}
+      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-BUDGET-TIGHTENING-116' }}
       PERF_ITERATIONS: ${{ github.event.inputs.iterations || '30' }}
       PERF_PARALLELISM: ${{ github.event.inputs.parallelism || '4' }}
       PERF_P50_GATE_MS: ${{ github.event.inputs.p50_gate_ms || '500' }}
       PERF_P95_GATE_MS: ${{ github.event.inputs.p95_gate_ms || '560' }}
       PERF_MAX_GATE_MS: ${{ github.event.inputs.max_gate_ms || '650' }}
       PERF_MAX_FAILURE_RATE_PCT: ${{ github.event.inputs.max_failure_rate_pct || '8.0' }}
-      PERF_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.max_socket_closed_failure_rate_pct || '6.0' }}
+      PERF_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.max_socket_closed_failure_rate_pct || '5.0' }}
       PERF_MAX_SOCKET_CLOSED_FAILURES: ${{ github.event.inputs.max_socket_closed_failures || '-1' }}
       PERF_SOCKET_CLOSED_STAGE_FAILURE_COUNT_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_count_budgets || '' }}
       PERF_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_rate_budgets || '' }}

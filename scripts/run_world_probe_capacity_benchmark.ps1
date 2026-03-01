@@ -17,11 +17,11 @@ param(
     [double]$MaxFailureRatePctP8 = 15.0,
     [double]$MaxFailureRatePctP16 = 24.0,
     [double]$MaxFailureRatePctP32 = 28.0,
-    [double]$MaxSocketClosedFailureRatePctP1 = 6.0,
-    [double]$MaxSocketClosedFailureRatePctP4 = 8.0,
-    [double]$MaxSocketClosedFailureRatePctP8 = 12.0,
-    [double]$MaxSocketClosedFailureRatePctP16 = 18.0,
-    [double]$MaxSocketClosedFailureRatePctP32 = 24.0,
+    [double]$MaxSocketClosedFailureRatePctP1 = 5.0,
+    [double]$MaxSocketClosedFailureRatePctP4 = 7.0,
+    [double]$MaxSocketClosedFailureRatePctP8 = 11.0,
+    [double]$MaxSocketClosedFailureRatePctP16 = 17.0,
+    [double]$MaxSocketClosedFailureRatePctP32 = 22.0,
     [switch]$AutoStartGateways
 )
 

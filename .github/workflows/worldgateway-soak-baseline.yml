@@ -6,7 +6,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-TRANSPORT-STAGE-TUNING-115"
+        default: "M2-R6-SOCKETCLOSE-BUDGET-TIGHTENING-116"
       rounds:
         description: "Soak benchmark rounds"
         required: true
@@ -26,7 +26,7 @@ on:
       perf_max_socket_closed_failure_rate_pct:
         description: "max socket-closed perf failure rate in percent"
         required: true
-        default: "6.0"
+        default: "5.0"
       perf_max_socket_closed_failures:
         description: "max socket-closed perf failed attempts count (-1 disables)"
         required: true
@@ -34,11 +34,11 @@ on:
       scale_max_socket_closed_failure_rate_pct:
         description: "max socket-closed scale/runtime failure rate in percent"
         required: true
-        default: "20.0"
+        default: "18.0"
       scale_profile_socket_closed_failure_rate_budgets:
         description: "per-profile socket-closed budgets (parallelism:percent CSV)"
         required: true
-        default: "1:6,4:8,8:12,16:18,32:24"
+        default: "1:5,4:7,8:11,16:17,32:22"
       socket_closed_stage_failure_count_budgets:
         description: "optional perf stage socket-closed count budgets (stage:count CSV)"
         required: false
@@ -53,15 +53,15 @@ jobs:
     name: Soak Baseline (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      SOAK_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-TRANSPORT-STAGE-TUNING-115' }}
+      SOAK_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-BUDGET-TIGHTENING-116' }}
       SOAK_ROUNDS: ${{ github.event.inputs.rounds || '8' }}
       SOAK_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '24' }}
       SOAK_PERF_ITERATIONS: ${{ github.event.inputs.perf_iterations || '60' }}
       SOAK_PERF_PARALLELISM: ${{ github.event.inputs.perf_parallelism || '4' }}
-      SOAK_PERF_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.perf_max_socket_closed_failure_rate_pct || '6.0' }}
+      SOAK_PERF_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.perf_max_socket_closed_failure_rate_pct || '5.0' }}
       SOAK_PERF_MAX_SOCKET_CLOSED_FAILURES: ${{ github.event.inputs.perf_max_socket_closed_failures || '-1' }}
-      SOAK_SCALE_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.scale_max_socket_closed_failure_rate_pct || '20.0' }}
-      SOAK_SCALE_PROFILE_SOCKET_CLOSED_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_socket_closed_failure_rate_budgets || '1:6,4:8,8:12,16:18,32:24' }}
+      SOAK_SCALE_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.scale_max_socket_closed_failure_rate_pct || '18.0' }}
+      SOAK_SCALE_PROFILE_SOCKET_CLOSED_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_socket_closed_failure_rate_budgets || '1:5,4:7,8:11,16:17,32:22' }}
       SOAK_SOCKET_CLOSED_STAGE_FAILURE_COUNT_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_count_budgets || '' }}
       SOAK_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_rate_budgets || '' }}
 

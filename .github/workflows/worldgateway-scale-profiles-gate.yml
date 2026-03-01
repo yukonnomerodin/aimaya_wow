@@ -9,7 +9,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-TRANSPORT-STAGE-TUNING-115"
+        default: "M2-R6-SOCKETCLOSE-BUDGET-TIGHTENING-116"
       iterations_per_profile:
         description: "Target successful probe iterations per profile"
         required: true
@@ -45,11 +45,11 @@ on:
       max_socket_closed_failure_rate_pct:
         description: "max socket-closed failure rate in percent (-1 disables)"
         required: true
-        default: "20.0"
+        default: "18.0"
       scale_profile_socket_closed_failure_rate_budgets:
         description: "optional per-profile socket-closed budgets (parallelism:percent CSV)"
         required: true
-        default: "1:6,4:8,8:12,16:18,32:24"
+        default: "1:5,4:7,8:11,16:17,32:22"
       socket_closed_stage_failure_rate_budgets:
         description: "optional stage socket-closed rate budgets (stage:percent CSV)"
         required: false
@@ -68,7 +68,7 @@ jobs:
     name: Scale Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      SCALE_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-TRANSPORT-STAGE-TUNING-115' }}
+      SCALE_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-BUDGET-TIGHTENING-116' }}
       SCALE_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '16' }}
       SCALE_MAX_FAILURE_RATE_PCT_P1: ${{ github.event.inputs.max_failure_rate_pct_p1 || '8.0' }}
       SCALE_MAX_FAILURE_RATE_PCT_P4: ${{ github.event.inputs.max_failure_rate_pct_p4 || '10.0' }}
@@ -77,8 +77,8 @@ jobs:
       SCALE_MAX_FAILURE_RATE_PCT_P32: ${{ github.event.inputs.max_failure_rate_pct_p32 || '28.0' }}
       SCALE_PROFILE_RELAY_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_relay_failure_rate_budgets || '1:8,4:10,8:15,16:24,32:28' }}
       SCALE_MAX_RELAY_FAILURE_RATE_PCT: ${{ github.event.inputs.max_relay_failure_rate_pct || '30.0' }}
-      SCALE_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.max_socket_closed_failure_rate_pct || '20.0' }}
-      SCALE_PROFILE_SOCKET_CLOSED_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_socket_closed_failure_rate_budgets || '1:6,4:8,8:12,16:18,32:24' }}
+      SCALE_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.max_socket_closed_failure_rate_pct || '18.0' }}
+      SCALE_PROFILE_SOCKET_CLOSED_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_socket_closed_failure_rate_budgets || '1:5,4:7,8:11,16:17,32:22' }}
       SCALE_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_rate_budgets || '' }}
       SCALE_MAX_DB_TIMEOUT_RATE_PCT: ${{ github.event.inputs.max_db_timeout_rate_pct || '0.5' }}
       SCALE_MAX_DIAG_QUEUE_SAT_RATE_PCT: ${{ github.event.inputs.max_diag_queue_saturation_rate_pct || '1.0' }}
