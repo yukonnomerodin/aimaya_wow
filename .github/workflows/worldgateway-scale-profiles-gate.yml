@@ -9,7 +9,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-SOCKETCLOSE-STAGE-BUDGETS-117"
+        default: "M2-R6-SOCKETCLOSE-STAGE-BUDGETS-PROFILE-118"
       iterations_per_profile:
         description: "Target successful probe iterations per profile"
         required: true
@@ -54,6 +54,10 @@ on:
         description: "optional stage socket-closed rate budgets (stage:percent CSV)"
         required: false
         default: "post_ack_read:5,await_enter_encrypted:5,unknown_socket_stage:5"
+      scale_profile_socket_closed_stage_failure_rate_budgets:
+        description: "optional per-profile stage socket-closed rate budgets (parallelism:stage:percent CSV)"
+        required: false
+        default: "1:post_ack_read:5,1:await_enter_encrypted:5,1:unknown_socket_stage:5,4:post_ack_read:5,4:await_enter_encrypted:5,4:unknown_socket_stage:5,8:post_ack_read:7,8:await_enter_encrypted:7,8:unknown_socket_stage:7,16:post_ack_read:10,16:await_enter_encrypted:10,16:unknown_socket_stage:10,32:post_ack_read:14,32:await_enter_encrypted:14,32:unknown_socket_stage:14"
       max_db_timeout_rate_pct:
         description: "max DB auth-bridge timeout rate in percent"
         required: true
@@ -68,7 +72,7 @@ jobs:
     name: Scale Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      SCALE_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-STAGE-BUDGETS-117' }}
+      SCALE_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-STAGE-BUDGETS-PROFILE-118' }}
       SCALE_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '16' }}
       SCALE_MAX_FAILURE_RATE_PCT_P1: ${{ github.event.inputs.max_failure_rate_pct_p1 || '8.0' }}
       SCALE_MAX_FAILURE_RATE_PCT_P4: ${{ github.event.inputs.max_failure_rate_pct_p4 || '10.0' }}
@@ -80,6 +84,7 @@ jobs:
       SCALE_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.max_socket_closed_failure_rate_pct || '18.0' }}
       SCALE_PROFILE_SOCKET_CLOSED_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_socket_closed_failure_rate_budgets || '1:5,4:7,8:11,16:17,32:22' }}
       SCALE_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_rate_budgets || 'post_ack_read:5,await_enter_encrypted:5,unknown_socket_stage:5' }}
+      SCALE_PROFILE_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_socket_closed_stage_failure_rate_budgets || '1:post_ack_read:5,1:await_enter_encrypted:5,1:unknown_socket_stage:5,4:post_ack_read:5,4:await_enter_encrypted:5,4:unknown_socket_stage:5,8:post_ack_read:7,8:await_enter_encrypted:7,8:unknown_socket_stage:7,16:post_ack_read:10,16:await_enter_encrypted:10,16:unknown_socket_stage:10,32:post_ack_read:14,32:await_enter_encrypted:14,32:unknown_socket_stage:14' }}
       SCALE_MAX_DB_TIMEOUT_RATE_PCT: ${{ github.event.inputs.max_db_timeout_rate_pct || '0.5' }}
       SCALE_MAX_DIAG_QUEUE_SAT_RATE_PCT: ${{ github.event.inputs.max_diag_queue_saturation_rate_pct || '1.0' }}
 
@@ -126,5 +131,6 @@ jobs:
             -MaxSocketClosedFailureRatePercent ${{ env.SCALE_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT }} `
             -ScaleProfileSocketClosedFailureRateBudgets "${{ env.SCALE_PROFILE_SOCKET_CLOSED_FAILURE_RATE_BUDGETS }}" `
             -SocketClosedStageFailureRateBudgets "${{ env.SCALE_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS }}" `
+            -ScaleProfileSocketClosedStageFailureRateBudgets "${{ env.SCALE_PROFILE_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS }}" `
             -MaxDbTimeoutRatePercent ${{ env.SCALE_MAX_DB_TIMEOUT_RATE_PCT }} `
             -MaxDiagnosticsQueueSaturationRatePercent ${{ env.SCALE_MAX_DIAG_QUEUE_SAT_RATE_PCT }}
