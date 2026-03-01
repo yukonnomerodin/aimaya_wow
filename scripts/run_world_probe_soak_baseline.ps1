@@ -61,6 +61,115 @@ function Load-JsonOrNull {
     }
 }
 
+function Get-StringOrDefault {
+    param(
+        [object]$InputObject,
+        [string]$PropertyName,
+        [string]$DefaultValue = ""
+    )
+
+    if ($null -eq $InputObject) {
+        return $DefaultValue
+    }
+
+    $prop = $InputObject.PSObject.Properties | Where-Object { $_.Name -eq $PropertyName } | Select-Object -First 1
+    if ($null -eq $prop -or $null -eq $prop.Value) {
+        return $DefaultValue
+    }
+
+    return [string]$prop.Value
+}
+
+function Invoke-ScriptStep {
+    param(
+        [string]$Name,
+        [string]$ScriptPath,
+        [object[]]$ScriptArgs,
+        [string]$SummaryPath = "",
+        [string]$ExpectedHypothesisId = "",
+        [string]$PassFlagProperty = ""
+    )
+
+    $stepStartedAt = [DateTimeOffset]::UtcNow
+    $summaryExists = $false
+    $summaryFresh = $true
+    $summaryParseOk = $true
+    $summaryHypothesisMatch = $true
+    $summaryWrittenAtUtc = $null
+    $summaryJson = $null
+    $passFlagValue = $null
+
+    if (-not [string]::IsNullOrWhiteSpace($SummaryPath) -and (Test-Path $SummaryPath)) {
+        Remove-Item -Path $SummaryPath -Force -ErrorAction SilentlyContinue
+    }
+
+    $invokeArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + @($ScriptArgs)
+    $stepOutput = @(& powershell @invokeArgs 2>&1)
+    $exitCode = $LASTEXITCODE
+
+    if (-not [string]::IsNullOrWhiteSpace($SummaryPath)) {
+        $summaryExists = Test-Path $SummaryPath
+        if ($summaryExists) {
+            $summaryItem = Get-Item -Path $SummaryPath
+            $summaryWrittenAtUtc = [DateTimeOffset]$summaryItem.LastWriteTimeUtc
+            $summaryFresh = ($summaryItem.LastWriteTimeUtc -ge $stepStartedAt.UtcDateTime.AddSeconds(-1))
+            $summaryJson = Load-JsonOrNull -PathValue $SummaryPath
+            $summaryParseOk = ($null -ne $summaryJson)
+
+            if ($summaryParseOk -and -not [string]::IsNullOrWhiteSpace($ExpectedHypothesisId)) {
+                $summaryHypothesis = Get-StringOrDefault -InputObject $summaryJson -PropertyName "hypothesis_id" -DefaultValue ""
+                $summaryHypothesisMatch = [string]::Equals(
+                    $summaryHypothesis,
+                    $ExpectedHypothesisId,
+                    [System.StringComparison]::OrdinalIgnoreCase)
+            }
+
+            if ($summaryParseOk -and -not [string]::IsNullOrWhiteSpace($PassFlagProperty)) {
+                $passProp = $summaryJson.PSObject.Properties | Where-Object { $_.Name -eq $PassFlagProperty } | Select-Object -First 1
+                if ($null -ne $passProp -and $null -ne $passProp.Value) {
+                    $passFlagValue = [bool]$passProp.Value
+                }
+            }
+        }
+        else {
+            $summaryFresh = $false
+            $summaryParseOk = $false
+            $summaryHypothesisMatch = $false
+        }
+    }
+
+    $stepPassed = ($exitCode -eq 0)
+    if (-not [string]::IsNullOrWhiteSpace($SummaryPath)) {
+        $stepPassed = $stepPassed -and $summaryExists -and $summaryFresh -and $summaryParseOk -and $summaryHypothesisMatch
+        if ($null -ne $passFlagValue) {
+            $stepPassed = $stepPassed -and [bool]$passFlagValue
+        }
+    }
+
+    $outputLines = @($stepOutput | ForEach-Object { [string]$_ })
+    $tailCount = [Math]::Min(10, $outputLines.Count)
+    $outputTail = @()
+    if ($tailCount -gt 0) {
+        $tailStart = [Math]::Max(0, $outputLines.Count - $tailCount)
+        $outputTail = @($outputLines | Select-Object -Skip $tailStart)
+    }
+
+    return [PSCustomObject]@{
+        name = $Name
+        exit_code = [int]$exitCode
+        passed = [bool]$stepPassed
+        summary_path = $SummaryPath
+        summary_exists = [bool]$summaryExists
+        summary_fresh = [bool]$summaryFresh
+        summary_parse_ok = [bool]$summaryParseOk
+        summary_hypothesis_match = [bool]$summaryHypothesisMatch
+        summary_pass_flag = $passFlagValue
+        summary_written_at_utc = if ($null -eq $summaryWrittenAtUtc) { $null } else { $summaryWrittenAtUtc.ToString("o") }
+        output_tail = [string[]]$outputTail
+        summary_json = $summaryJson
+    }
+}
+
 if ($Rounds -le 0) { throw "Rounds must be > 0." }
 if ($IterationsPerProfile -le 0) { throw "IterationsPerProfile must be > 0." }
 if ($PerfIterations -le 0) { throw "PerfIterations must be > 0." }
@@ -97,107 +206,144 @@ $perfSummaryPath = Join-Path $resolvedRunlogsPath "probe_perf_gate.soak.latest.j
 $runtimePerfSummaryPath = Join-Path $resolvedRunlogsPath "probe_runtime_error_budget_gate.soak_perf.latest.json"
 $runtimeScaleSummaryPath = Join-Path $resolvedRunlogsPath "probe_runtime_error_budget_gate.soak_scale.latest.json"
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File $resolvedStartGatewaysScriptPath -HypothesisId $HypothesisId
-$startExitCode = $LASTEXITCODE
-if ($startExitCode -ne 0) {
-    throw "Failed to start gateways for soak baseline."
+$stepResults = [ordered]@{}
+
+$startStep = Invoke-ScriptStep `
+    -Name "start_gateways" `
+    -ScriptPath $resolvedStartGatewaysScriptPath `
+    -ScriptArgs @("-HypothesisId", $HypothesisId)
+$stepResults[$startStep.name] = $startStep
+if (-not $startStep.passed) {
+    throw ("Failed to start gateways for soak baseline. ExitCode={0}. OutputTail={1}" -f `
+            $startStep.exit_code, ($startStep.output_tail -join " | "))
 }
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File $resolvedCapacityBenchmarkScriptPath `
-    -HypothesisId $HypothesisId `
-    -Rounds $Rounds `
-    -IterationsPerProfile $IterationsPerProfile `
-    -AllowFailuresPerProfile -1 `
-    -Profiles $Profiles `
+$capacityStep = Invoke-ScriptStep `
+    -Name "capacity_benchmark" `
+    -ScriptPath $resolvedCapacityBenchmarkScriptPath `
+    -ScriptArgs @(
+        "-HypothesisId", $HypothesisId,
+        "-Rounds", $Rounds,
+        "-IterationsPerProfile", $IterationsPerProfile,
+        "-AllowFailuresPerProfile", -1,
+        "-Profiles", $Profiles,
+        "-SummaryPath", $capacitySummaryPath,
+        "-MaxFailureRatePctP1", $MaxFailureRatePctP1,
+        "-MaxFailureRatePctP4", $MaxFailureRatePctP4,
+        "-MaxFailureRatePctP8", $MaxFailureRatePctP8,
+        "-MaxFailureRatePctP16", $MaxFailureRatePctP16,
+        "-MaxFailureRatePctP32", $MaxFailureRatePctP32) `
     -SummaryPath $capacitySummaryPath `
-    -MaxFailureRatePctP1 $MaxFailureRatePctP1 `
-    -MaxFailureRatePctP4 $MaxFailureRatePctP4 `
-    -MaxFailureRatePctP8 $MaxFailureRatePctP8 `
-    -MaxFailureRatePctP16 $MaxFailureRatePctP16 `
-    -MaxFailureRatePctP32 $MaxFailureRatePctP32
-$capacityExitCode = $LASTEXITCODE
+    -ExpectedHypothesisId $HypothesisId
+$stepResults[$capacityStep.name] = $capacityStep
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File $resolvedScaleProfilesScriptPath `
-    -HypothesisId $HypothesisId `
-    -IterationsPerProfile $IterationsPerProfile `
-    -AllowFailuresPerProfile -1 `
-    -Profiles $Profiles `
+$scaleStep = Invoke-ScriptStep `
+    -Name "scale_profiles" `
+    -ScriptPath $resolvedScaleProfilesScriptPath `
+    -ScriptArgs @(
+        "-HypothesisId", $HypothesisId,
+        "-IterationsPerProfile", $IterationsPerProfile,
+        "-AllowFailuresPerProfile", -1,
+        "-Profiles", $Profiles,
+        "-SummaryPath", $scaleSummaryPath,
+        "-MaxFailureRatePctP1", $MaxFailureRatePctP1,
+        "-MaxFailureRatePctP4", $MaxFailureRatePctP4,
+        "-MaxFailureRatePctP8", $MaxFailureRatePctP8,
+        "-MaxFailureRatePctP16", $MaxFailureRatePctP16,
+        "-MaxFailureRatePctP32", $MaxFailureRatePctP32) `
     -SummaryPath $scaleSummaryPath `
-    -MaxFailureRatePctP1 $MaxFailureRatePctP1 `
-    -MaxFailureRatePctP4 $MaxFailureRatePctP4 `
-    -MaxFailureRatePctP8 $MaxFailureRatePctP8 `
-    -MaxFailureRatePctP16 $MaxFailureRatePctP16 `
-    -MaxFailureRatePctP32 $MaxFailureRatePctP32
-$scaleExitCode = $LASTEXITCODE
+    -ExpectedHypothesisId $HypothesisId `
+    -PassFlagProperty "overall_pass"
+$stepResults[$scaleStep.name] = $scaleStep
 
-$perfArgs = @(
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", $resolvedPerfGateScriptPath,
-    "-HypothesisId", $HypothesisId,
-    "-Iterations", $PerfIterations,
-    "-Parallelism", $PerfParallelism,
-    "-P50GateMs", $PerfP50GateMs,
-    "-P95GateMs", $PerfP95GateMs,
-    "-MaxDurationGateMs", $PerfMaxGateMs,
-    "-MaxFailureRatePercent", $PerfMaxFailureRatePercent,
-    "-MaxSocketClosedFailures", $PerfMaxSocketClosedFailures,
-    "-MaxSocketClosedFailureRatePercent", $PerfMaxSocketClosedFailureRatePercent,
-    "-SocketClosedFailureStageBudgets", $PerfSocketClosedStageFailureCountBudgets,
-    "-SummaryPath", $perfSummaryPath
-)
-& powershell @perfArgs
-$perfExitCode = $LASTEXITCODE
+$perfStep = Invoke-ScriptStep `
+    -Name "perf_gate" `
+    -ScriptPath $resolvedPerfGateScriptPath `
+    -ScriptArgs @(
+        "-HypothesisId", $HypothesisId,
+        "-Iterations", $PerfIterations,
+        "-Parallelism", $PerfParallelism,
+        "-P50GateMs", $PerfP50GateMs,
+        "-P95GateMs", $PerfP95GateMs,
+        "-MaxDurationGateMs", $PerfMaxGateMs,
+        "-MaxFailureRatePercent", $PerfMaxFailureRatePercent,
+        "-MaxSocketClosedFailures", $PerfMaxSocketClosedFailures,
+        "-MaxSocketClosedFailureRatePercent", $PerfMaxSocketClosedFailureRatePercent,
+        "-SocketClosedFailureStageBudgets", $PerfSocketClosedStageFailureCountBudgets,
+        "-SummaryPath", $perfSummaryPath) `
+    -SummaryPath $perfSummaryPath `
+    -ExpectedHypothesisId $HypothesisId `
+    -PassFlagProperty "gate_passed"
+$stepResults[$perfStep.name] = $perfStep
 
-$runtimePerfArgs = @(
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", $resolvedRuntimeBudgetGateScriptPath,
-    "-HypothesisId", $HypothesisId,
-    "-PerfSummaryPath", $perfSummaryPath,
-    "-SummaryPath", $runtimePerfSummaryPath,
-    "-MaxRelayFailureRatePercent", $PerfMaxFailureRatePercent,
-    "-MaxSocketClosedFailureRatePercent", $PerfMaxSocketClosedFailureRatePercent,
-    "-SocketClosedStageFailureRateBudgets", $SocketClosedStageFailureRateBudgets,
-    "-MaxDbTimeoutRatePercent", $MaxDbTimeoutRatePercent,
-    "-MaxDiagnosticsQueueSaturationRatePercent", $MaxDiagnosticsQueueSaturationRatePercent
-)
-& powershell @runtimePerfArgs
-$runtimePerfExitCode = $LASTEXITCODE
+$runtimePerfStep = Invoke-ScriptStep `
+    -Name "runtime_gate_perf_context" `
+    -ScriptPath $resolvedRuntimeBudgetGateScriptPath `
+    -ScriptArgs @(
+        "-HypothesisId", $HypothesisId,
+        "-PerfSummaryPath", $perfSummaryPath,
+        "-SummaryPath", $runtimePerfSummaryPath,
+        "-MaxRelayFailureRatePercent", $PerfMaxFailureRatePercent,
+        "-MaxSocketClosedFailureRatePercent", $PerfMaxSocketClosedFailureRatePercent,
+        "-SocketClosedStageFailureRateBudgets", $SocketClosedStageFailureRateBudgets,
+        "-MaxDbTimeoutRatePercent", $MaxDbTimeoutRatePercent,
+        "-MaxDiagnosticsQueueSaturationRatePercent", $MaxDiagnosticsQueueSaturationRatePercent) `
+    -SummaryPath $runtimePerfSummaryPath `
+    -ExpectedHypothesisId $HypothesisId `
+    -PassFlagProperty "gate_passed"
+$stepResults[$runtimePerfStep.name] = $runtimePerfStep
 
-$runtimeScaleArgs = @(
-    "-NoProfile",
-    "-ExecutionPolicy", "Bypass",
-    "-File", $resolvedRuntimeBudgetGateScriptPath,
-    "-HypothesisId", $HypothesisId,
-    "-PerfSummaryPath", $perfSummaryPath,
-    "-ScaleSummaryPath", $scaleSummaryPath,
-    "-SummaryPath", $runtimeScaleSummaryPath,
-    "-MaxRelayFailureRatePercent", $ScaleMaxRelayFailureRatePercent,
-    "-ScaleProfileRelayFailureRateBudgets", $ScaleProfileRelayFailureRateBudgets,
-    "-MaxSocketClosedFailureRatePercent", $ScaleMaxSocketClosedFailureRatePercent,
-    "-ScaleProfileSocketClosedFailureRateBudgets", $ScaleProfileSocketClosedFailureRateBudgets,
-    "-SocketClosedStageFailureRateBudgets", $SocketClosedStageFailureRateBudgets,
-    "-MaxDbTimeoutRatePercent", $MaxDbTimeoutRatePercent,
-    "-MaxDiagnosticsQueueSaturationRatePercent", $MaxDiagnosticsQueueSaturationRatePercent
-)
-& powershell @runtimeScaleArgs
-$runtimeScaleExitCode = $LASTEXITCODE
+$runtimeScaleStep = Invoke-ScriptStep `
+    -Name "runtime_gate_scale_context" `
+    -ScriptPath $resolvedRuntimeBudgetGateScriptPath `
+    -ScriptArgs @(
+        "-HypothesisId", $HypothesisId,
+        "-PerfSummaryPath", $perfSummaryPath,
+        "-ScaleSummaryPath", $scaleSummaryPath,
+        "-SummaryPath", $runtimeScaleSummaryPath,
+        "-MaxRelayFailureRatePercent", $ScaleMaxRelayFailureRatePercent,
+        "-ScaleProfileRelayFailureRateBudgets", $ScaleProfileRelayFailureRateBudgets,
+        "-MaxSocketClosedFailureRatePercent", $ScaleMaxSocketClosedFailureRatePercent,
+        "-ScaleProfileSocketClosedFailureRateBudgets", $ScaleProfileSocketClosedFailureRateBudgets,
+        "-SocketClosedStageFailureRateBudgets", $SocketClosedStageFailureRateBudgets,
+        "-MaxDbTimeoutRatePercent", $MaxDbTimeoutRatePercent,
+        "-MaxDiagnosticsQueueSaturationRatePercent", $MaxDiagnosticsQueueSaturationRatePercent) `
+    -SummaryPath $runtimeScaleSummaryPath `
+    -ExpectedHypothesisId $HypothesisId `
+    -PassFlagProperty "gate_passed"
+$stepResults[$runtimeScaleStep.name] = $runtimeScaleStep
 
-$capacitySummary = Load-JsonOrNull -PathValue $capacitySummaryPath
-$scaleSummary = Load-JsonOrNull -PathValue $scaleSummaryPath
-$perfSummary = Load-JsonOrNull -PathValue $perfSummaryPath
-$runtimePerfSummary = Load-JsonOrNull -PathValue $runtimePerfSummaryPath
-$runtimeScaleSummary = Load-JsonOrNull -PathValue $runtimeScaleSummaryPath
+$startExitCode = [int]$startStep.exit_code
+$capacityExitCode = [int]$capacityStep.exit_code
+$scaleExitCode = [int]$scaleStep.exit_code
+$perfExitCode = [int]$perfStep.exit_code
+$runtimePerfExitCode = [int]$runtimePerfStep.exit_code
+$runtimeScaleExitCode = [int]$runtimeScaleStep.exit_code
+
+$capacitySummary = if ($null -ne $capacityStep.summary_json) { $capacityStep.summary_json } else { Load-JsonOrNull -PathValue $capacitySummaryPath }
+$scaleSummary = if ($null -ne $scaleStep.summary_json) { $scaleStep.summary_json } else { Load-JsonOrNull -PathValue $scaleSummaryPath }
+$perfSummary = if ($null -ne $perfStep.summary_json) { $perfStep.summary_json } else { Load-JsonOrNull -PathValue $perfSummaryPath }
+$runtimePerfSummary = if ($null -ne $runtimePerfStep.summary_json) { $runtimePerfStep.summary_json } else { Load-JsonOrNull -PathValue $runtimePerfSummaryPath }
+$runtimeScaleSummary = if ($null -ne $runtimeScaleStep.summary_json) { $runtimeScaleStep.summary_json } else { Load-JsonOrNull -PathValue $runtimeScaleSummaryPath }
 
 $allStepsPassed = @(
-    ($startExitCode -eq 0),
-    ($capacityExitCode -eq 0),
-    ($scaleExitCode -eq 0),
-    ($perfExitCode -eq 0),
-    ($runtimePerfExitCode -eq 0),
-    ($runtimeScaleExitCode -eq 0)
+    [bool]$startStep.passed,
+    [bool]$capacityStep.passed,
+    [bool]$scaleStep.passed,
+    [bool]$perfStep.passed,
+    [bool]$runtimePerfStep.passed,
+    [bool]$runtimeScaleStep.passed
 ) -notcontains $false
+
+$profilesNormalized = @()
+try {
+    $profilesNormalized = @($Profiles.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) |
+        ForEach-Object { [int]$_.Trim() } |
+        Select-Object -Unique)
+}
+catch {
+    $profilesNormalized = @()
+}
 
 $finishedAt = [DateTimeOffset]::UtcNow
 $summary = [ordered]@{
@@ -205,7 +351,8 @@ $summary = [ordered]@{
     hypothesis_id = $HypothesisId
     rounds = $Rounds
     iterations_per_profile = $IterationsPerProfile
-    profiles = $Profiles
+    profiles_csv = $Profiles
+    profiles = @($profilesNormalized)
     perf_iterations = $PerfIterations
     perf_parallelism = $PerfParallelism
     perf_gates = [ordered]@{
@@ -234,6 +381,56 @@ $summary = [ordered]@{
         perf_gate = $perfExitCode
         runtime_gate_perf_context = $runtimePerfExitCode
         runtime_gate_scale_context = $runtimeScaleExitCode
+    }
+    step_validations = [ordered]@{
+        start_gateways = [ordered]@{
+            passed = [bool]$startStep.passed
+            output_tail = @($startStep.output_tail)
+        }
+        capacity_benchmark = [ordered]@{
+            passed = [bool]$capacityStep.passed
+            summary_exists = [bool]$capacityStep.summary_exists
+            summary_fresh = [bool]$capacityStep.summary_fresh
+            summary_parse_ok = [bool]$capacityStep.summary_parse_ok
+            summary_hypothesis_match = [bool]$capacityStep.summary_hypothesis_match
+            output_tail = @($capacityStep.output_tail)
+        }
+        scale_profiles = [ordered]@{
+            passed = [bool]$scaleStep.passed
+            summary_exists = [bool]$scaleStep.summary_exists
+            summary_fresh = [bool]$scaleStep.summary_fresh
+            summary_parse_ok = [bool]$scaleStep.summary_parse_ok
+            summary_hypothesis_match = [bool]$scaleStep.summary_hypothesis_match
+            summary_pass_flag = $scaleStep.summary_pass_flag
+            output_tail = @($scaleStep.output_tail)
+        }
+        perf_gate = [ordered]@{
+            passed = [bool]$perfStep.passed
+            summary_exists = [bool]$perfStep.summary_exists
+            summary_fresh = [bool]$perfStep.summary_fresh
+            summary_parse_ok = [bool]$perfStep.summary_parse_ok
+            summary_hypothesis_match = [bool]$perfStep.summary_hypothesis_match
+            summary_pass_flag = $perfStep.summary_pass_flag
+            output_tail = @($perfStep.output_tail)
+        }
+        runtime_gate_perf_context = [ordered]@{
+            passed = [bool]$runtimePerfStep.passed
+            summary_exists = [bool]$runtimePerfStep.summary_exists
+            summary_fresh = [bool]$runtimePerfStep.summary_fresh
+            summary_parse_ok = [bool]$runtimePerfStep.summary_parse_ok
+            summary_hypothesis_match = [bool]$runtimePerfStep.summary_hypothesis_match
+            summary_pass_flag = $runtimePerfStep.summary_pass_flag
+            output_tail = @($runtimePerfStep.output_tail)
+        }
+        runtime_gate_scale_context = [ordered]@{
+            passed = [bool]$runtimeScaleStep.passed
+            summary_exists = [bool]$runtimeScaleStep.summary_exists
+            summary_fresh = [bool]$runtimeScaleStep.summary_fresh
+            summary_parse_ok = [bool]$runtimeScaleStep.summary_parse_ok
+            summary_hypothesis_match = [bool]$runtimeScaleStep.summary_hypothesis_match
+            summary_pass_flag = $runtimeScaleStep.summary_pass_flag
+            output_tail = @($runtimeScaleStep.output_tail)
+        }
     }
     overall_pass = $allStepsPassed
     artifacts = [ordered]@{
