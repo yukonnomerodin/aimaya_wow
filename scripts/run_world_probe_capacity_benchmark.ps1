@@ -35,9 +35,9 @@ function Resolve-RepoPath {
 function Resolve-ProfileList {
     param([string]$ProfilesCsv)
 
-    $profiles = $ProfilesCsv.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) |
+    $profiles = @($ProfilesCsv.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries) |
         ForEach-Object { [int]$_.Trim() } |
-        Select-Object -Unique
+        Select-Object -Unique)
 
     if ($profiles.Count -eq 0) {
         throw "Profiles list is empty."
@@ -222,7 +222,7 @@ $summary = [ordered]@{
     rounds_completed = $roundSummaries.Count
     iterations_per_profile = $IterationsPerProfile
     allow_failures_per_profile = $AllowFailuresPerProfile
-    profiles = $profileList
+    profiles = @($profileList)
     safety = [ordered]@{
         p95_multiplier = $P95SafetyMultiplier
         max_multiplier = $MaxSafetyMultiplier

@@ -9,7 +9,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-SOCKETCLOSE-STAGE-METRICS-111"
+        default: "M2-R6-SOCKETCLOSE-BUDGET-ENFORCEMENT-112"
       iterations:
         description: "Target successful probe iterations"
         required: true
@@ -37,9 +37,17 @@ on:
       max_socket_closed_failure_rate_pct:
         description: "max socket-closed probe failure rate in percent (-1 disables)"
         required: true
+        default: "6.0"
+      max_socket_closed_failures:
+        description: "max socket-closed failed attempts count (-1 disables)"
+        required: true
         default: "-1"
+      socket_closed_stage_failure_count_budgets:
+        description: "optional stage socket-closed count budgets (stage:count CSV)"
+        required: false
+        default: ""
       socket_closed_stage_failure_rate_budgets:
-        description: "optional stage socket-closed rate budgets (stage:percent CSV)"
+        description: "optional runtime stage socket-closed rate budgets (stage:percent CSV)"
         required: false
         default: ""
       max_db_timeout_rate_pct:
@@ -56,14 +64,16 @@ jobs:
     name: Perf Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-STAGE-METRICS-111' }}
+      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-BUDGET-ENFORCEMENT-112' }}
       PERF_ITERATIONS: ${{ github.event.inputs.iterations || '30' }}
       PERF_PARALLELISM: ${{ github.event.inputs.parallelism || '4' }}
       PERF_P50_GATE_MS: ${{ github.event.inputs.p50_gate_ms || '500' }}
       PERF_P95_GATE_MS: ${{ github.event.inputs.p95_gate_ms || '560' }}
       PERF_MAX_GATE_MS: ${{ github.event.inputs.max_gate_ms || '650' }}
       PERF_MAX_FAILURE_RATE_PCT: ${{ github.event.inputs.max_failure_rate_pct || '8.0' }}
-      PERF_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.max_socket_closed_failure_rate_pct || '-1' }}
+      PERF_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT: ${{ github.event.inputs.max_socket_closed_failure_rate_pct || '6.0' }}
+      PERF_MAX_SOCKET_CLOSED_FAILURES: ${{ github.event.inputs.max_socket_closed_failures || '-1' }}
+      PERF_SOCKET_CLOSED_STAGE_FAILURE_COUNT_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_count_budgets || '' }}
       PERF_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_rate_budgets || '' }}
       PERF_MAX_DB_TIMEOUT_RATE_PCT: ${{ github.event.inputs.max_db_timeout_rate_pct || '0.5' }}
       PERF_MAX_DIAG_QUEUE_SAT_RATE_PCT: ${{ github.event.inputs.max_diag_queue_saturation_rate_pct || '1.0' }}
@@ -97,8 +107,9 @@ jobs:
             -P95GateMs ${{ env.PERF_P95_GATE_MS }} `
             -MaxDurationGateMs ${{ env.PERF_MAX_GATE_MS }} `
             -MaxFailureRatePercent ${{ env.PERF_MAX_FAILURE_RATE_PCT }} `
+            -MaxSocketClosedFailures ${{ env.PERF_MAX_SOCKET_CLOSED_FAILURES }} `
             -MaxSocketClosedFailureRatePercent ${{ env.PERF_MAX_SOCKET_CLOSED_FAILURE_RATE_PCT }} `
-            -SocketClosedFailureStageBudgets "${{ env.PERF_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS }}" `
+            -SocketClosedFailureStageBudgets "${{ env.PERF_SOCKET_CLOSED_STAGE_FAILURE_COUNT_BUDGETS }}" `
             -HypothesisId "${{ env.PERF_HYPOTHESIS_ID }}"
 
       - name: Run Runtime Error Budget Gate

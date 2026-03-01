@@ -16,8 +16,14 @@ param(
     [int]$PerfP95GateMs = 560,
     [int]$PerfMaxGateMs = 650,
     [double]$PerfMaxFailureRatePercent = 8.0,
+    [int]$PerfMaxSocketClosedFailures = -1,
+    [double]$PerfMaxSocketClosedFailureRatePercent = 6.0,
+    [string]$PerfSocketClosedStageFailureCountBudgets = "",
+    [string]$SocketClosedStageFailureRateBudgets = "",
     [double]$ScaleMaxRelayFailureRatePercent = 30.0,
     [string]$ScaleProfileRelayFailureRateBudgets = "1:8,4:10,8:15,16:24,32:28",
+    [double]$ScaleMaxSocketClosedFailureRatePercent = 20.0,
+    [string]$ScaleProfileSocketClosedFailureRateBudgets = "1:6,4:8,8:12,16:18,32:24",
     [double]$MaxDbTimeoutRatePercent = 0.5,
     [double]$MaxDiagnosticsQueueSaturationRatePercent = 1.0,
     [double]$MaxFailureRatePctP1 = 8.0,
@@ -124,35 +130,58 @@ $capacityExitCode = $LASTEXITCODE
     -MaxFailureRatePctP32 $MaxFailureRatePctP32
 $scaleExitCode = $LASTEXITCODE
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File $resolvedPerfGateScriptPath `
-    -HypothesisId $HypothesisId `
-    -Iterations $PerfIterations `
-    -Parallelism $PerfParallelism `
-    -P50GateMs $PerfP50GateMs `
-    -P95GateMs $PerfP95GateMs `
-    -MaxDurationGateMs $PerfMaxGateMs `
-    -MaxFailureRatePercent $PerfMaxFailureRatePercent `
-    -SummaryPath $perfSummaryPath
+$perfArgs = @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", $resolvedPerfGateScriptPath,
+    "-HypothesisId", $HypothesisId,
+    "-Iterations", $PerfIterations,
+    "-Parallelism", $PerfParallelism,
+    "-P50GateMs", $PerfP50GateMs,
+    "-P95GateMs", $PerfP95GateMs,
+    "-MaxDurationGateMs", $PerfMaxGateMs,
+    "-MaxFailureRatePercent", $PerfMaxFailureRatePercent,
+    "-MaxSocketClosedFailures", $PerfMaxSocketClosedFailures,
+    "-MaxSocketClosedFailureRatePercent", $PerfMaxSocketClosedFailureRatePercent,
+    "-SocketClosedFailureStageBudgets", $PerfSocketClosedStageFailureCountBudgets,
+    "-SummaryPath", $perfSummaryPath
+)
+& powershell @perfArgs
 $perfExitCode = $LASTEXITCODE
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File $resolvedRuntimeBudgetGateScriptPath `
-    -HypothesisId $HypothesisId `
-    -PerfSummaryPath $perfSummaryPath `
-    -SummaryPath $runtimePerfSummaryPath `
-    -MaxRelayFailureRatePercent $PerfMaxFailureRatePercent `
-    -MaxDbTimeoutRatePercent $MaxDbTimeoutRatePercent `
-    -MaxDiagnosticsQueueSaturationRatePercent $MaxDiagnosticsQueueSaturationRatePercent
+$runtimePerfArgs = @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", $resolvedRuntimeBudgetGateScriptPath,
+    "-HypothesisId", $HypothesisId,
+    "-PerfSummaryPath", $perfSummaryPath,
+    "-SummaryPath", $runtimePerfSummaryPath,
+    "-MaxRelayFailureRatePercent", $PerfMaxFailureRatePercent,
+    "-MaxSocketClosedFailureRatePercent", $PerfMaxSocketClosedFailureRatePercent,
+    "-SocketClosedStageFailureRateBudgets", $SocketClosedStageFailureRateBudgets,
+    "-MaxDbTimeoutRatePercent", $MaxDbTimeoutRatePercent,
+    "-MaxDiagnosticsQueueSaturationRatePercent", $MaxDiagnosticsQueueSaturationRatePercent
+)
+& powershell @runtimePerfArgs
 $runtimePerfExitCode = $LASTEXITCODE
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File $resolvedRuntimeBudgetGateScriptPath `
-    -HypothesisId $HypothesisId `
-    -PerfSummaryPath $perfSummaryPath `
-    -ScaleSummaryPath $scaleSummaryPath `
-    -SummaryPath $runtimeScaleSummaryPath `
-    -MaxRelayFailureRatePercent $ScaleMaxRelayFailureRatePercent `
-    -ScaleProfileRelayFailureRateBudgets $ScaleProfileRelayFailureRateBudgets `
-    -MaxDbTimeoutRatePercent $MaxDbTimeoutRatePercent `
-    -MaxDiagnosticsQueueSaturationRatePercent $MaxDiagnosticsQueueSaturationRatePercent
+$runtimeScaleArgs = @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", $resolvedRuntimeBudgetGateScriptPath,
+    "-HypothesisId", $HypothesisId,
+    "-PerfSummaryPath", $perfSummaryPath,
+    "-ScaleSummaryPath", $scaleSummaryPath,
+    "-SummaryPath", $runtimeScaleSummaryPath,
+    "-MaxRelayFailureRatePercent", $ScaleMaxRelayFailureRatePercent,
+    "-ScaleProfileRelayFailureRateBudgets", $ScaleProfileRelayFailureRateBudgets,
+    "-MaxSocketClosedFailureRatePercent", $ScaleMaxSocketClosedFailureRatePercent,
+    "-ScaleProfileSocketClosedFailureRateBudgets", $ScaleProfileSocketClosedFailureRateBudgets,
+    "-SocketClosedStageFailureRateBudgets", $SocketClosedStageFailureRateBudgets,
+    "-MaxDbTimeoutRatePercent", $MaxDbTimeoutRatePercent,
+    "-MaxDiagnosticsQueueSaturationRatePercent", $MaxDiagnosticsQueueSaturationRatePercent
+)
+& powershell @runtimeScaleArgs
 $runtimeScaleExitCode = $LASTEXITCODE
 
 $capacitySummary = Load-JsonOrNull -PathValue $capacitySummaryPath
@@ -162,12 +191,12 @@ $runtimePerfSummary = Load-JsonOrNull -PathValue $runtimePerfSummaryPath
 $runtimeScaleSummary = Load-JsonOrNull -PathValue $runtimeScaleSummaryPath
 
 $allStepsPassed = @(
-    $startExitCode -eq 0,
-    $capacityExitCode -eq 0,
-    $scaleExitCode -eq 0,
-    $perfExitCode -eq 0,
-    $runtimePerfExitCode -eq 0,
-    $runtimeScaleExitCode -eq 0
+    ($startExitCode -eq 0),
+    ($capacityExitCode -eq 0),
+    ($scaleExitCode -eq 0),
+    ($perfExitCode -eq 0),
+    ($runtimePerfExitCode -eq 0),
+    ($runtimeScaleExitCode -eq 0)
 ) -notcontains $false
 
 $finishedAt = [DateTimeOffset]::UtcNow
@@ -184,10 +213,17 @@ $summary = [ordered]@{
         p95_ms = $PerfP95GateMs
         max_ms = $PerfMaxGateMs
         max_failure_rate_percent = $PerfMaxFailureRatePercent
+        max_socket_closed_failures = $PerfMaxSocketClosedFailures
+        max_socket_closed_failure_rate_percent = $PerfMaxSocketClosedFailureRatePercent
+        socket_closed_stage_failure_count_budgets = $PerfSocketClosedStageFailureCountBudgets
+        socket_closed_stage_failure_rate_budgets = $SocketClosedStageFailureRateBudgets
     }
     scale_gates = [ordered]@{
         max_relay_failure_rate_percent = $ScaleMaxRelayFailureRatePercent
         scale_profile_relay_failure_rate_budgets = $ScaleProfileRelayFailureRateBudgets
+        max_socket_closed_failure_rate_percent = $ScaleMaxSocketClosedFailureRatePercent
+        scale_profile_socket_closed_failure_rate_budgets = $ScaleProfileSocketClosedFailureRateBudgets
+        socket_closed_stage_failure_rate_budgets = $SocketClosedStageFailureRateBudgets
         max_db_timeout_rate_percent = $MaxDbTimeoutRatePercent
         max_diagnostics_queue_saturation_rate_percent = $MaxDiagnosticsQueueSaturationRatePercent
     }
