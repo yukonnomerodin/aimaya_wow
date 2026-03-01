@@ -12,6 +12,8 @@ param(
     [double]$MaxSafetyMultiplier = 1.15,
     [double]$FailureRateSafetyDeltaPercent = 2.0,
     [double]$SocketClosedFailureRateSafetyDeltaPercent = 1.0,
+    [double]$SocketClosedStageFailureRateSafetyDeltaPercent = 1.0,
+    [double]$SocketClosedStageFailureRateFloorPercent = 2.0,
     [double]$MaxFailureRatePctP1 = 8.0,
     [double]$MaxFailureRatePctP4 = 10.0,
     [double]$MaxFailureRatePctP8 = 15.0,
@@ -22,6 +24,7 @@ param(
     [double]$MaxSocketClosedFailureRatePctP8 = 11.0,
     [double]$MaxSocketClosedFailureRatePctP16 = 17.0,
     [double]$MaxSocketClosedFailureRatePctP32 = 22.0,
+    [string]$ScaleProfileSocketClosedStageFailureRateBudgets = "",
     [switch]$AutoStartGateways
 )
 
@@ -99,6 +102,53 @@ function Get-ConfiguredSocketClosedFailureRateGateForProfile {
     }
 }
 
+function Parse-ScaleProfileSocketClosedStageFailureRateBudgets {
+    param([string]$BudgetCsv)
+
+    $budgetMap = @{}
+    if ([string]::IsNullOrWhiteSpace($BudgetCsv)) {
+        return $budgetMap
+    }
+
+    $tokens = $BudgetCsv.Split(',', [System.StringSplitOptions]::RemoveEmptyEntries)
+    foreach ($token in $tokens) {
+        $entry = $token.Trim()
+        if ([string]::IsNullOrWhiteSpace($entry)) {
+            continue
+        }
+
+        $parts = $entry.Split(':', 3, [System.StringSplitOptions]::RemoveEmptyEntries)
+        if ($parts.Length -ne 3) {
+            throw "Invalid ScaleProfileSocketClosedStageFailureRateBudgets entry '$entry'. Expected format: parallelism:stage:percent."
+        }
+
+        $parallelism = [int]$parts[0].Trim()
+        $stageName = $parts[1].Trim().ToLowerInvariant()
+        $budgetPercent = [double]$parts[2].Trim()
+        if ($parallelism -le 0) {
+            throw "Invalid profile parallelism in ScaleProfileSocketClosedStageFailureRateBudgets entry '$entry'."
+        }
+
+        if ([string]::IsNullOrWhiteSpace($stageName)) {
+            throw "Invalid stage name in ScaleProfileSocketClosedStageFailureRateBudgets entry '$entry'."
+        }
+
+        if ($budgetPercent -lt 0) {
+            throw "Invalid stage budget in ScaleProfileSocketClosedStageFailureRateBudgets entry '$entry'. Percent must be >= 0."
+        }
+
+        if (-not $budgetMap.ContainsKey($parallelism)) {
+            $budgetMap[$parallelism] = @{}
+        }
+
+        $profileMap = [hashtable]$budgetMap[$parallelism]
+        $profileMap[$stageName] = $budgetPercent
+        $budgetMap[$parallelism] = $profileMap
+    }
+
+    return $budgetMap
+}
+
 if ($Rounds -le 0) { throw "Rounds must be > 0." }
 if ($IterationsPerProfile -le 0) { throw "IterationsPerProfile must be > 0." }
 if ($AllowFailuresPerProfile -lt -1) { throw "AllowFailuresPerProfile must be >= -1 (-1 means auto from failure-rate gate)." }
@@ -106,8 +156,11 @@ if ($P95SafetyMultiplier -lt 1.0) { throw "P95SafetyMultiplier must be >= 1.0." 
 if ($MaxSafetyMultiplier -lt 1.0) { throw "MaxSafetyMultiplier must be >= 1.0." }
 if ($FailureRateSafetyDeltaPercent -lt 0) { throw "FailureRateSafetyDeltaPercent must be >= 0." }
 if ($SocketClosedFailureRateSafetyDeltaPercent -lt 0) { throw "SocketClosedFailureRateSafetyDeltaPercent must be >= 0." }
+if ($SocketClosedStageFailureRateSafetyDeltaPercent -lt 0) { throw "SocketClosedStageFailureRateSafetyDeltaPercent must be >= 0." }
+if ($SocketClosedStageFailureRateFloorPercent -lt 0) { throw "SocketClosedStageFailureRateFloorPercent must be >= 0." }
 
 $profileList = Resolve-ProfileList -ProfilesCsv $Profiles
+$configuredScaleProfileSocketClosedStageBudgetMap = Parse-ScaleProfileSocketClosedStageFailureRateBudgets -BudgetCsv $ScaleProfileSocketClosedStageFailureRateBudgets
 $resolvedScaleProfilesScriptPath = Resolve-RepoPath -PathValue $ScaleProfilesScriptPath
 $resolvedStartGatewaysScriptPath = Resolve-RepoPath -PathValue $StartGatewaysScriptPath
 $resolvedRunlogsPath = Resolve-RepoPath -PathValue $RunlogsPath
@@ -302,7 +355,17 @@ foreach ($parallelism in $profileList) {
     }
 
     $stageRateByAttemptPercent = @{}
+    $configuredStageGatePercent = @{}
+    $recommendedStageGateRawPercent = @{}
+    $recommendedStageGateWithFloorPercent = @{}
     $recommendedStageGatePercent = @{}
+    $stageBudgetRecommendationDriftPercent = @{}
+    $stageBudgetRecommendationDriftDirection = @{}
+    $configuredProfileStageBudgetMap = @{}
+    if ($configuredScaleProfileSocketClosedStageBudgetMap.ContainsKey($parallelism)) {
+        $configuredProfileStageBudgetMap = [hashtable]$configuredScaleProfileSocketClosedStageBudgetMap[$parallelism]
+    }
+
     $stageKeysForBudget = New-Object System.Collections.Generic.List[string]
     foreach ($stageName in $canonicalSocketClosedStages) {
         if (-not [string]::IsNullOrWhiteSpace($stageName)) {
@@ -327,20 +390,54 @@ foreach ($parallelism in $profileList) {
 
         $stageRateByAttemptPercent[$stageKey] = $stageRate
         $recommendedStageGateRaw = [double][Math]::Round(
-            [Math]::Min(100.0, ($stageRate + $SocketClosedFailureRateSafetyDeltaPercent)),
+            [Math]::Min(100.0, ($stageRate + $SocketClosedStageFailureRateSafetyDeltaPercent)),
+            3)
+        $recommendedStageGateWithFloor = [double][Math]::Round(
+            [Math]::Max($SocketClosedStageFailureRateFloorPercent, $recommendedStageGateRaw),
             3)
         $recommendedStageGate = if ($configuredSocketClosedFailureRateGate -ge 0) {
-            [double][Math]::Round([Math]::Min($configuredSocketClosedFailureRateGate, $recommendedStageGateRaw), 3)
+            [double][Math]::Round([Math]::Min($configuredSocketClosedFailureRateGate, $recommendedStageGateWithFloor), 3)
         }
         else {
-            $recommendedStageGateRaw
+            $recommendedStageGateWithFloor
         }
 
+        $configuredStageGate = $null
+        if ($configuredProfileStageBudgetMap.ContainsKey($stageKey)) {
+            $configuredStageGate = [double]$configuredProfileStageBudgetMap[$stageKey]
+        }
+
+        $driftPercent = $null
+        $driftDirection = "unconfigured"
+        if ($null -ne $configuredStageGate) {
+            $driftPercent = [double][Math]::Round(($recommendedStageGate - $configuredStageGate), 3)
+            if ($driftPercent -gt 0) {
+                $driftDirection = "increase"
+            }
+            elseif ($driftPercent -lt 0) {
+                $driftDirection = "decrease"
+            }
+            else {
+                $driftDirection = "unchanged"
+            }
+        }
+
+        $configuredStageGatePercent[$stageKey] = $configuredStageGate
+        $recommendedStageGateRawPercent[$stageKey] = $recommendedStageGateRaw
+        $recommendedStageGateWithFloorPercent[$stageKey] = $recommendedStageGateWithFloor
         $recommendedStageGatePercent[$stageKey] = $recommendedStageGate
+        $stageBudgetRecommendationDriftPercent[$stageKey] = $driftPercent
+        $stageBudgetRecommendationDriftDirection[$stageKey] = $driftDirection
         $recommendedScaleProfileSocketClosedStageBudgetEntries.Add([PSCustomObject]@{
                 parallelism = $parallelism
                 stage = $stageKey
+                configured_stage_failure_rate_gate_percent = $configuredStageGate
+                observed_stage_failure_rate_percent = $stageRate
+                recommended_stage_failure_rate_gate_percent_raw = $recommendedStageGateRaw
+                recommended_stage_failure_rate_gate_percent_with_floor = $recommendedStageGateWithFloor
                 recommended_stage_failure_rate_gate_percent = $recommendedStageGate
+                drift_percent = $driftPercent
+                drift_direction = $driftDirection
             }) | Out-Null
         $recommendedScaleProfileSocketClosedStageBudgetCsvEntries.Add(
             ("{0}:{1}:{2}" -f $parallelism, $stageKey, $recommendedStageGate.ToString("0.###", [System.Globalization.CultureInfo]::InvariantCulture))) | Out-Null
@@ -365,7 +462,12 @@ foreach ($parallelism in $profileList) {
             socket_closed_failure_stage_counts = $stageCounts
             socket_closed_failure_stage_share_percent = $stageSharePercent
             socket_closed_failure_stage_rate_by_attempt_percent = $stageRateByAttemptPercent
+            configured_socket_closed_stage_failure_rate_gate_percent = $configuredStageGatePercent
+            recommended_socket_closed_stage_failure_rate_gate_percent_raw = $recommendedStageGateRawPercent
+            recommended_socket_closed_stage_failure_rate_gate_percent_with_floor = $recommendedStageGateWithFloorPercent
             recommended_socket_closed_stage_failure_rate_gate_percent = $recommendedStageGatePercent
+            socket_closed_stage_budget_recommendation_drift_percent = $stageBudgetRecommendationDriftPercent
+            socket_closed_stage_budget_recommendation_drift_direction = $stageBudgetRecommendationDriftDirection
             dominant_socket_closed_stage = if ([string]::IsNullOrWhiteSpace($dominantStage)) { $null } else { $dominantStage }
             dominant_socket_closed_stage_share_percent = if ([string]::IsNullOrWhiteSpace($dominantStage) -or -not $stageSharePercent.ContainsKey($dominantStage)) { $null } else { [double]$stageSharePercent[$dominantStage] }
         }) | Out-Null
@@ -385,7 +487,10 @@ $summary = [ordered]@{
         max_multiplier = $MaxSafetyMultiplier
         failure_rate_delta_percent = $FailureRateSafetyDeltaPercent
         socket_closed_failure_rate_delta_percent = $SocketClosedFailureRateSafetyDeltaPercent
+        socket_closed_stage_failure_rate_delta_percent = $SocketClosedStageFailureRateSafetyDeltaPercent
+        socket_closed_stage_failure_rate_floor_percent = $SocketClosedStageFailureRateFloorPercent
     }
+    configured_scale_profile_socket_closed_stage_failure_rate_budgets = $ScaleProfileSocketClosedStageFailureRateBudgets
     round_summaries = [object[]]$roundSummaries.ToArray()
     recommendations = [object[]]$recommendations.ToArray()
     recommended_scale_profile_socket_closed_stage_failure_rate_budgets = [object[]]$recommendedScaleProfileSocketClosedStageBudgetEntries.ToArray()
