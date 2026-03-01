@@ -11,11 +11,17 @@ param(
     [double]$P95SafetyMultiplier = 1.20,
     [double]$MaxSafetyMultiplier = 1.15,
     [double]$FailureRateSafetyDeltaPercent = 2.0,
+    [double]$SocketClosedFailureRateSafetyDeltaPercent = 1.0,
     [double]$MaxFailureRatePctP1 = 8.0,
     [double]$MaxFailureRatePctP4 = 10.0,
     [double]$MaxFailureRatePctP8 = 15.0,
     [double]$MaxFailureRatePctP16 = 24.0,
     [double]$MaxFailureRatePctP32 = 28.0,
+    [double]$MaxSocketClosedFailureRatePctP1 = 6.0,
+    [double]$MaxSocketClosedFailureRatePctP4 = 8.0,
+    [double]$MaxSocketClosedFailureRatePctP8 = 12.0,
+    [double]$MaxSocketClosedFailureRatePctP16 = 18.0,
+    [double]$MaxSocketClosedFailureRatePctP32 = 24.0,
     [switch]$AutoStartGateways
 )
 
@@ -80,12 +86,26 @@ function Get-ConfiguredFailureRateGateForProfile {
     }
 }
 
+function Get-ConfiguredSocketClosedFailureRateGateForProfile {
+    param([int]$Parallelism)
+
+    switch ($Parallelism) {
+        1 { return [double]$MaxSocketClosedFailureRatePctP1 }
+        4 { return [double]$MaxSocketClosedFailureRatePctP4 }
+        8 { return [double]$MaxSocketClosedFailureRatePctP8 }
+        16 { return [double]$MaxSocketClosedFailureRatePctP16 }
+        32 { return [double]$MaxSocketClosedFailureRatePctP32 }
+        default { return -1.0 }
+    }
+}
+
 if ($Rounds -le 0) { throw "Rounds must be > 0." }
 if ($IterationsPerProfile -le 0) { throw "IterationsPerProfile must be > 0." }
 if ($AllowFailuresPerProfile -lt -1) { throw "AllowFailuresPerProfile must be >= -1 (-1 means auto from failure-rate gate)." }
 if ($P95SafetyMultiplier -lt 1.0) { throw "P95SafetyMultiplier must be >= 1.0." }
 if ($MaxSafetyMultiplier -lt 1.0) { throw "MaxSafetyMultiplier must be >= 1.0." }
 if ($FailureRateSafetyDeltaPercent -lt 0) { throw "FailureRateSafetyDeltaPercent must be >= 0." }
+if ($SocketClosedFailureRateSafetyDeltaPercent -lt 0) { throw "SocketClosedFailureRateSafetyDeltaPercent must be >= 0." }
 
 $profileList = Resolve-ProfileList -ProfilesCsv $Profiles
 $resolvedScaleProfilesScriptPath = Resolve-RepoPath -PathValue $ScaleProfilesScriptPath
@@ -161,6 +181,8 @@ for ($round = 1; $round -le $Rounds; $round++) {
                 p95_values = New-Object System.Collections.Generic.List[double]
                 max_values = New-Object System.Collections.Generic.List[double]
                 failure_rate_values = New-Object System.Collections.Generic.List[double]
+                socket_closed_failure_rate_values = New-Object System.Collections.Generic.List[double]
+                socket_closed_failure_stage_counts = @{}
             }
         }
 
@@ -169,6 +191,32 @@ for ($round = 1; $round -le $Rounds; $round++) {
         $stats.p95_values.Add([double]$result.p95_ms) | Out-Null
         $stats.max_values.Add([double]$result.max_ms) | Out-Null
         $stats.failure_rate_values.Add([double]$result.failure_rate_percent) | Out-Null
+
+        $socketClosedRate = if ($null -ne $result.socket_closed_failure_rate_percent) {
+            [double]$result.socket_closed_failure_rate_percent
+        }
+        else {
+            0.0
+        }
+        $stats.socket_closed_failure_rate_values.Add($socketClosedRate) | Out-Null
+
+        $stageCountsProp = $result.PSObject.Properties | Where-Object { $_.Name -eq "socket_closed_failure_stages" } | Select-Object -First 1
+        if ($null -ne $stageCountsProp -and $null -ne $stageCountsProp.Value) {
+            foreach ($stageProp in $stageCountsProp.Value.PSObject.Properties) {
+                $stageName = [string]$stageProp.Name
+                if ([string]::IsNullOrWhiteSpace($stageName)) {
+                    continue
+                }
+
+                $normalizedStage = $stageName.ToLowerInvariant()
+                $stageCount = [int]$stageProp.Value
+                if (-not $stats.socket_closed_failure_stage_counts.ContainsKey($normalizedStage)) {
+                    $stats.socket_closed_failure_stage_counts[$normalizedStage] = 0
+                }
+
+                $stats.socket_closed_failure_stage_counts[$normalizedStage] += $stageCount
+            }
+        }
     }
 }
 
@@ -187,6 +235,12 @@ foreach ($parallelism in $profileList) {
     $worstP95 = [double](($stats.p95_values | Measure-Object -Maximum).Maximum)
     $worstMax = [double](($stats.max_values | Measure-Object -Maximum).Maximum)
     $worstFailureRate = [double](($stats.failure_rate_values | Measure-Object -Maximum).Maximum)
+    $worstSocketClosedFailureRate = if ($stats.socket_closed_failure_rate_values.Count -gt 0) {
+        [double](($stats.socket_closed_failure_rate_values | Measure-Object -Maximum).Maximum)
+    }
+    else {
+        0.0
+    }
 
     $recommendedP95 = [int][Math]::Ceiling($worstP95 * $P95SafetyMultiplier)
     $recommendedMaxRaw = [int][Math]::Ceiling($worstMax * $MaxSafetyMultiplier)
@@ -199,6 +253,44 @@ foreach ($parallelism in $profileList) {
     else {
         $recommendedFailureRateRaw
     }
+    $configuredSocketClosedFailureRateGate = Get-ConfiguredSocketClosedFailureRateGateForProfile -Parallelism $parallelism
+    $recommendedSocketClosedFailureRateRaw = [double][Math]::Round(
+        [Math]::Min(100.0, ($worstSocketClosedFailureRate + $SocketClosedFailureRateSafetyDeltaPercent)),
+        3)
+    $recommendedSocketClosedFailureRate = if ($configuredSocketClosedFailureRateGate -ge 0) {
+        [double][Math]::Round([Math]::Min($configuredSocketClosedFailureRateGate, $recommendedSocketClosedFailureRateRaw), 3)
+    }
+    else {
+        $recommendedSocketClosedFailureRateRaw
+    }
+
+    $stageCounts = @{}
+    foreach ($stageKey in $stats.socket_closed_failure_stage_counts.Keys) {
+        $stageCounts[$stageKey] = [int]$stats.socket_closed_failure_stage_counts[$stageKey]
+    }
+
+    $totalSocketClosedStageCount = 0
+    foreach ($countValue in $stageCounts.Values) {
+        $totalSocketClosedStageCount += [int]$countValue
+    }
+
+    $stageSharePercent = @{}
+    $dominantStage = ""
+    $dominantStageCount = 0
+    foreach ($stageKey in $stageCounts.Keys) {
+        $countValue = [int]$stageCounts[$stageKey]
+        if ($countValue -gt $dominantStageCount) {
+            $dominantStageCount = $countValue
+            $dominantStage = $stageKey
+        }
+
+        $stageSharePercent[$stageKey] = if ($totalSocketClosedStageCount -gt 0) {
+            [double][Math]::Round(($countValue * 100.0) / $totalSocketClosedStageCount, 3)
+        }
+        else {
+            0.0
+        }
+    }
 
     $recommendations.Add([PSCustomObject]@{
             parallelism = $parallelism
@@ -206,11 +298,19 @@ foreach ($parallelism in $profileList) {
             observed_worst_p95_ms = [double][Math]::Round($worstP95, 3)
             observed_worst_max_ms = [double][Math]::Round($worstMax, 3)
             observed_worst_failure_rate_percent = [double][Math]::Round($worstFailureRate, 3)
+            observed_worst_socket_closed_failure_rate_percent = [double][Math]::Round($worstSocketClosedFailureRate, 3)
             configured_failure_rate_gate_percent = if ($configuredFailureRateGate -lt 0) { $null } else { [double][Math]::Round($configuredFailureRateGate, 3) }
+            configured_socket_closed_failure_rate_gate_percent = if ($configuredSocketClosedFailureRateGate -lt 0) { $null } else { [double][Math]::Round($configuredSocketClosedFailureRateGate, 3) }
             recommended_p95_gate_ms = $recommendedP95
             recommended_max_gate_ms = $recommendedMax
             recommended_failure_rate_gate_percent_raw = $recommendedFailureRateRaw
             recommended_failure_rate_gate_percent = $recommendedFailureRate
+            recommended_socket_closed_failure_rate_gate_percent_raw = $recommendedSocketClosedFailureRateRaw
+            recommended_socket_closed_failure_rate_gate_percent = $recommendedSocketClosedFailureRate
+            socket_closed_failure_stage_counts = $stageCounts
+            socket_closed_failure_stage_share_percent = $stageSharePercent
+            dominant_socket_closed_stage = if ([string]::IsNullOrWhiteSpace($dominantStage)) { $null } else { $dominantStage }
+            dominant_socket_closed_stage_share_percent = if ([string]::IsNullOrWhiteSpace($dominantStage) -or -not $stageSharePercent.ContainsKey($dominantStage)) { $null } else { [double]$stageSharePercent[$dominantStage] }
         }) | Out-Null
 }
 
@@ -227,6 +327,7 @@ $summary = [ordered]@{
         p95_multiplier = $P95SafetyMultiplier
         max_multiplier = $MaxSafetyMultiplier
         failure_rate_delta_percent = $FailureRateSafetyDeltaPercent
+        socket_closed_failure_rate_delta_percent = $SocketClosedFailureRateSafetyDeltaPercent
     }
     round_summaries = [object[]]$roundSummaries.ToArray()
     recommendations = [object[]]$recommendations.ToArray()

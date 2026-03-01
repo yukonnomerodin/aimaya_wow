@@ -9,7 +9,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-SOAK-ARTIFACT-FRESHNESS-113"
+        default: "M2-R6-SOCKETCLOSE-STAGE-BASELINE-114"
       iterations:
         description: "Target successful probe iterations"
         required: true
@@ -64,7 +64,7 @@ jobs:
     name: Perf Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOAK-ARTIFACT-FRESHNESS-113' }}
+      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-STAGE-BASELINE-114' }}
       PERF_ITERATIONS: ${{ github.event.inputs.iterations || '30' }}
       PERF_PARALLELISM: ${{ github.event.inputs.parallelism || '4' }}
       PERF_P50_GATE_MS: ${{ github.event.inputs.p50_gate_ms || '500' }}

@@ -6,7 +6,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-SOAK-ARTIFACT-FRESHNESS-113"
+        default: "M2-R6-SOCKETCLOSE-STAGE-BASELINE-114"
       rounds:
         description: "Soak benchmark rounds"
         required: true
@@ -53,7 +53,7 @@ jobs:
     name: Soak Baseline (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      SOAK_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOAK-ARTIFACT-FRESHNESS-113' }}
+      SOAK_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-STAGE-BASELINE-114' }}
       SOAK_ROUNDS: ${{ github.event.inputs.rounds || '8' }}
       SOAK_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '24' }}
       SOAK_PERF_ITERATIONS: ${{ github.event.inputs.perf_iterations || '60' }}
