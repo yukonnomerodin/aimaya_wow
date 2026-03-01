@@ -24,7 +24,7 @@ param(
     [string]$ScaleProfileRelayFailureRateBudgets = "1:8,4:10,8:15,16:24,32:28",
     [double]$ScaleMaxSocketClosedFailureRatePercent = 18.0,
     [string]$ScaleProfileSocketClosedFailureRateBudgets = "1:5,4:7,8:11,16:17,32:22",
-    [string]$ScaleProfileSocketClosedStageFailureRateBudgets = "1:post_ack_read:5,1:await_enter_encrypted:5,1:unknown_socket_stage:5,4:post_ack_read:5,4:await_enter_encrypted:5,4:unknown_socket_stage:5,8:post_ack_read:7,8:await_enter_encrypted:7,8:unknown_socket_stage:7,16:post_ack_read:10,16:await_enter_encrypted:10,16:unknown_socket_stage:10,32:post_ack_read:14,32:await_enter_encrypted:14,32:unknown_socket_stage:14",
+    [string]$ScaleProfileSocketClosedStageFailureRateBudgets = "1:await_enter_encrypted:1,1:post_ack_read:1,1:unknown_socket_stage:1,4:await_enter_encrypted:1,4:post_ack_read:1,4:unknown_socket_stage:1,8:await_enter_encrypted:1,8:post_ack_read:1,8:unknown_socket_stage:1,16:await_enter_encrypted:1,16:post_ack_read:1,16:unknown_socket_stage:1,32:await_enter_encrypted:1,32:post_ack_read:1,32:unknown_socket_stage:1",
     [double]$MaxDbTimeoutRatePercent = 0.5,
     [double]$MaxDiagnosticsQueueSaturationRatePercent = 1.0,
     [double]$MaxFailureRatePctP1 = 8.0,

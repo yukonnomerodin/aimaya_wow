@@ -6,7 +6,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-STAGE-BUDGET-RECOMMENDER-119"
+        default: "M2-R6-STAGE-BUDGET-APPLY-120"
       rounds:
         description: "Soak benchmark rounds"
         required: true
@@ -50,14 +50,14 @@ on:
       scale_profile_socket_closed_stage_failure_rate_budgets:
         description: "optional runtime per-profile stage socket-closed rate budgets (parallelism:stage:percent CSV)"
         required: false
-        default: "1:post_ack_read:5,1:await_enter_encrypted:5,1:unknown_socket_stage:5,4:post_ack_read:5,4:await_enter_encrypted:5,4:unknown_socket_stage:5,8:post_ack_read:7,8:await_enter_encrypted:7,8:unknown_socket_stage:7,16:post_ack_read:10,16:await_enter_encrypted:10,16:unknown_socket_stage:10,32:post_ack_read:14,32:await_enter_encrypted:14,32:unknown_socket_stage:14"
+        default: "1:await_enter_encrypted:1,1:post_ack_read:1,1:unknown_socket_stage:1,4:await_enter_encrypted:1,4:post_ack_read:1,4:unknown_socket_stage:1,8:await_enter_encrypted:1,8:post_ack_read:1,8:unknown_socket_stage:1,16:await_enter_encrypted:1,16:post_ack_read:1,16:unknown_socket_stage:1,32:await_enter_encrypted:1,32:post_ack_read:1,32:unknown_socket_stage:1"
 
 jobs:
   soak-baseline:
     name: Soak Baseline (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      SOAK_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-STAGE-BUDGET-RECOMMENDER-119' }}
+      SOAK_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-STAGE-BUDGET-APPLY-120' }}
       SOAK_ROUNDS: ${{ github.event.inputs.rounds || '8' }}
       SOAK_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '24' }}
       SOAK_PERF_ITERATIONS: ${{ github.event.inputs.perf_iterations || '60' }}
@@ -68,7 +68,7 @@ jobs:
       SOAK_SCALE_PROFILE_SOCKET_CLOSED_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_socket_closed_failure_rate_budgets || '1:5,4:7,8:11,16:17,32:22' }}
       SOAK_SOCKET_CLOSED_STAGE_FAILURE_COUNT_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_count_budgets || 'post_ack_read:2,await_enter_encrypted:2,unknown_socket_stage:2' }}
       SOAK_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.socket_closed_stage_failure_rate_budgets || 'post_ack_read:5,await_enter_encrypted:5,unknown_socket_stage:5' }}
-      SOAK_SCALE_PROFILE_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_socket_closed_stage_failure_rate_budgets || '1:post_ack_read:5,1:await_enter_encrypted:5,1:unknown_socket_stage:5,4:post_ack_read:5,4:await_enter_encrypted:5,4:unknown_socket_stage:5,8:post_ack_read:7,8:await_enter_encrypted:7,8:unknown_socket_stage:7,16:post_ack_read:10,16:await_enter_encrypted:10,16:unknown_socket_stage:10,32:post_ack_read:14,32:await_enter_encrypted:14,32:unknown_socket_stage:14' }}
+      SOAK_SCALE_PROFILE_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS: ${{ github.event.inputs.scale_profile_socket_closed_stage_failure_rate_budgets || '1:await_enter_encrypted:1,1:post_ack_read:1,1:unknown_socket_stage:1,4:await_enter_encrypted:1,4:post_ack_read:1,4:unknown_socket_stage:1,8:await_enter_encrypted:1,8:post_ack_read:1,8:unknown_socket_stage:1,16:await_enter_encrypted:1,16:post_ack_read:1,16:unknown_socket_stage:1,32:await_enter_encrypted:1,32:post_ack_read:1,32:unknown_socket_stage:1' }}
 
     steps:
       - name: Checkout
