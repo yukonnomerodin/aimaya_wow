@@ -335,6 +335,7 @@ internal static class HandshakeDiagnosticsWriters
             service_boundary_contract_version = report.ServiceBoundaryContractVersion,
             relay_failure_recovery_policy = report.RelayFailureRecoveryPolicy,
             relay_failure_drain_timeout_ms = report.RelayFailureDrainTimeoutMs,
+            relay_post_bootstrap_half_close_linger_ms = report.RelayPostBootstrapHalfCloseLingerMs,
             db_auth_bridge_timeout_ms = report.DbAuthBridgeTimeoutMs,
             handshake_diagnostics_dispatch_mode = report.HandshakeDiagnosticsDispatchMode,
             handshake_diagnostics_queue_enqueue_attempt_total = report.HandshakeDiagnosticsQueueEnqueueAttemptTotal,

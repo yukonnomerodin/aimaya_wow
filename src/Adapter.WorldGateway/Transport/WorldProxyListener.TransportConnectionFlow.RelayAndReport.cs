@@ -204,16 +204,31 @@ public sealed partial class WorldProxyListener
                 Details: "drain_disabled");
         }
 
+        bool postBootstrapLingerApplied =
+            string.Equals(firstCompletedDirection, "world->client", StringComparison.OrdinalIgnoreCase) &&
+            bridgeState.CurrentStage >= BridgeStage.BOOTSTRAP_FLUSHED &&
+            _options.RelayPostBootstrapHalfCloseLingerMs > 0;
+        int effectiveDrainTimeoutMs = _options.RelayFailureDrainTimeoutMs;
+        if (postBootstrapLingerApplied)
+        {
+            effectiveDrainTimeoutMs += _options.RelayPostBootstrapHalfCloseLingerMs;
+            bridgeState.MarkTemporalInvariant(
+                name: "relay_half_close_post_bootstrap_linger_applied",
+                passed: true,
+                expected: "when world->client half-close happens after bootstrap, extend sibling drain window to reduce post-ACK socket-close races",
+                actual: $"base_timeout_ms={_options.RelayFailureDrainTimeoutMs};linger_ms={_options.RelayPostBootstrapHalfCloseLingerMs};effective_timeout_ms={effectiveDrainTimeoutMs};stage={bridgeState.CurrentStage}");
+        }
+
         long drainStartMs = Environment.TickCount64;
         Task completed = await Task.WhenAny(
                 siblingRelay,
-                Task.Delay(_options.RelayFailureDrainTimeoutMs, relayToken))
+                Task.Delay(effectiveDrainTimeoutMs, relayToken))
             .ConfigureAwait(false);
         long drainElapsedMs = Math.Max(0, Environment.TickCount64 - drainStartMs);
         bool drainCompleted = ReferenceEquals(completed, siblingRelay);
         string details = drainCompleted
-            ? $"sibling_completed;timeout_ms={_options.RelayFailureDrainTimeoutMs}"
-            : $"sibling_timeout;timeout_ms={_options.RelayFailureDrainTimeoutMs}";
+            ? $"sibling_completed;timeout_ms={effectiveDrainTimeoutMs};base_timeout_ms={_options.RelayFailureDrainTimeoutMs};post_bootstrap_linger_applied={postBootstrapLingerApplied};post_bootstrap_linger_ms={_options.RelayPostBootstrapHalfCloseLingerMs}"
+            : $"sibling_timeout;timeout_ms={effectiveDrainTimeoutMs};base_timeout_ms={_options.RelayFailureDrainTimeoutMs};post_bootstrap_linger_applied={postBootstrapLingerApplied};post_bootstrap_linger_ms={_options.RelayPostBootstrapHalfCloseLingerMs}";
 
         bridgeState.MarkTemporalInvariant(
             name: "relay_half_close_sibling_drain",

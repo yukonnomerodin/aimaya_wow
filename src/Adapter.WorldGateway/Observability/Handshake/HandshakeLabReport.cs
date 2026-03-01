@@ -18,6 +18,7 @@ internal sealed record HandshakeLabReport
     public string ServiceBoundaryContractVersion { get; init; } = WorldProxyServiceBoundaryContract.R6ServiceBoundaryV1;
     public string RelayFailureRecoveryPolicy { get; init; } = global::Adapter.WorldGateway.RelayFailureRecoveryPolicy.CancelSiblingAndClose.ToString();
     public int RelayFailureDrainTimeoutMs { get; init; }
+    public int RelayPostBootstrapHalfCloseLingerMs { get; init; }
     public int DbAuthBridgeTimeoutMs { get; init; }
     public string HandshakeDiagnosticsDispatchMode { get; init; } = global::Adapter.WorldGateway.HandshakeDiagnosticsDispatchMode.Sync.ToString();
     public long HandshakeDiagnosticsQueueEnqueueAttemptTotal { get; init; }
@@ -151,6 +152,7 @@ internal sealed record HandshakeLabReport
             ServiceBoundaryContractVersion = serviceBoundaryContractVersion,
             RelayFailureRecoveryPolicy = relayFailureRecoveryPolicy.ToString(),
             RelayFailureDrainTimeoutMs = options.RelayFailureDrainTimeoutMs,
+            RelayPostBootstrapHalfCloseLingerMs = options.RelayPostBootstrapHalfCloseLingerMs,
             DbAuthBridgeTimeoutMs = options.AuthBridgeDbTimeoutMs,
             HandshakeDiagnosticsDispatchMode = handshakeDiagnosticsDispatchMode.ToString(),
             HandshakeDiagnosticsQueueEnqueueAttemptTotal = handshakeDiagnosticsQueueEnqueueAttemptTotal,

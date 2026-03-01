@@ -230,6 +230,9 @@ public sealed class WorldProxyOptions
     [Range(0, 5000)]
     public int RelayFailureDrainTimeoutMs { get; init; } = 250;
 
+    [Range(0, 5000)]
+    public int RelayPostBootstrapHalfCloseLingerMs { get; init; } = 300;
+
     public string HandshakeDiagnosticsDispatchMode { get; init; } = "sync";
 
     [Range(1, 4096)]
