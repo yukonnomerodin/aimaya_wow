@@ -6,7 +6,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-SOCKETCLOSE-STAGE-BUDGETS-PROFILE-118"
+        default: "M2-R6-STAGE-BUDGET-RECOMMENDER-119"
       rounds:
         description: "Soak benchmark rounds"
         required: true
@@ -57,7 +57,7 @@ jobs:
     name: Soak Baseline (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      SOAK_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-STAGE-BUDGETS-PROFILE-118' }}
+      SOAK_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-STAGE-BUDGET-RECOMMENDER-119' }}
       SOAK_ROUNDS: ${{ github.event.inputs.rounds || '8' }}
       SOAK_ITERATIONS_PER_PROFILE: ${{ github.event.inputs.iterations_per_profile || '24' }}
       SOAK_PERF_ITERATIONS: ${{ github.event.inputs.perf_iterations || '60' }}
@@ -99,3 +99,4 @@ jobs:
             -ScaleProfileSocketClosedFailureRateBudgets "${{ env.SOAK_SCALE_PROFILE_SOCKET_CLOSED_FAILURE_RATE_BUDGETS }}" `
             -ScaleProfileSocketClosedStageFailureRateBudgets "${{ env.SOAK_SCALE_PROFILE_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS }}" `
             -SocketClosedStageFailureRateBudgets "${{ env.SOAK_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS }}"
+

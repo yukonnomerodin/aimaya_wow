@@ -139,6 +139,7 @@ if ($AutoStartGateways) {
 $startedAt = [DateTimeOffset]::UtcNow
 $roundSummaries = New-Object System.Collections.Generic.List[object]
 $profileStats = @{}
+$canonicalSocketClosedStages = @("post_ack_read", "await_enter_encrypted", "unknown_socket_stage")
 
 for ($round = 1; $round -le $Rounds; $round++) {
     $roundSummaryPath = Join-Path $resolvedRunlogsPath ("probe_scale_profiles.benchmark_round_{0}.json" -f $round)
@@ -183,6 +184,7 @@ for ($round = 1; $round -le $Rounds; $round++) {
                 failure_rate_values = New-Object System.Collections.Generic.List[double]
                 socket_closed_failure_rate_values = New-Object System.Collections.Generic.List[double]
                 socket_closed_failure_stage_counts = @{}
+                attempts_total = 0
             }
         }
 
@@ -191,6 +193,10 @@ for ($round = 1; $round -le $Rounds; $round++) {
         $stats.p95_values.Add([double]$result.p95_ms) | Out-Null
         $stats.max_values.Add([double]$result.max_ms) | Out-Null
         $stats.failure_rate_values.Add([double]$result.failure_rate_percent) | Out-Null
+        $attemptsForResult = [int]$result.successful_iterations + [int]$result.failed_attempts
+        if ($attemptsForResult -gt 0) {
+            $stats.attempts_total += $attemptsForResult
+        }
 
         $socketClosedRate = if ($null -ne $result.socket_closed_failure_rate_percent) {
             [double]$result.socket_closed_failure_rate_percent
@@ -221,6 +227,8 @@ for ($round = 1; $round -le $Rounds; $round++) {
 }
 
 $recommendations = New-Object System.Collections.Generic.List[object]
+$recommendedScaleProfileSocketClosedStageBudgetEntries = New-Object System.Collections.Generic.List[object]
+$recommendedScaleProfileSocketClosedStageBudgetCsvEntries = New-Object System.Collections.Generic.List[string]
 foreach ($parallelism in $profileList) {
     if (-not $profileStats.ContainsKey($parallelism)) {
         continue
@@ -269,6 +277,7 @@ foreach ($parallelism in $profileList) {
         $stageCounts[$stageKey] = [int]$stats.socket_closed_failure_stage_counts[$stageKey]
     }
 
+    $attemptsTotal = [Math]::Max(0, [int]$stats.attempts_total)
     $totalSocketClosedStageCount = 0
     foreach ($countValue in $stageCounts.Values) {
         $totalSocketClosedStageCount += [int]$countValue
@@ -292,6 +301,51 @@ foreach ($parallelism in $profileList) {
         }
     }
 
+    $stageRateByAttemptPercent = @{}
+    $recommendedStageGatePercent = @{}
+    $stageKeysForBudget = New-Object System.Collections.Generic.List[string]
+    foreach ($stageName in $canonicalSocketClosedStages) {
+        if (-not [string]::IsNullOrWhiteSpace($stageName)) {
+            $stageKeysForBudget.Add($stageName.ToLowerInvariant()) | Out-Null
+        }
+    }
+    foreach ($stageName in $stageCounts.Keys) {
+        if (-not [string]::IsNullOrWhiteSpace($stageName)) {
+            $stageKeysForBudget.Add($stageName.ToLowerInvariant()) | Out-Null
+        }
+    }
+
+    $orderedStageKeys = @($stageKeysForBudget | Select-Object -Unique | Sort-Object)
+    foreach ($stageKey in $orderedStageKeys) {
+        $countValue = if ($stageCounts.ContainsKey($stageKey)) { [int]$stageCounts[$stageKey] } else { 0 }
+        $stageRate = if ($attemptsTotal -gt 0) {
+            [double][Math]::Round(($countValue * 100.0) / $attemptsTotal, 3)
+        }
+        else {
+            0.0
+        }
+
+        $stageRateByAttemptPercent[$stageKey] = $stageRate
+        $recommendedStageGateRaw = [double][Math]::Round(
+            [Math]::Min(100.0, ($stageRate + $SocketClosedFailureRateSafetyDeltaPercent)),
+            3)
+        $recommendedStageGate = if ($configuredSocketClosedFailureRateGate -ge 0) {
+            [double][Math]::Round([Math]::Min($configuredSocketClosedFailureRateGate, $recommendedStageGateRaw), 3)
+        }
+        else {
+            $recommendedStageGateRaw
+        }
+
+        $recommendedStageGatePercent[$stageKey] = $recommendedStageGate
+        $recommendedScaleProfileSocketClosedStageBudgetEntries.Add([PSCustomObject]@{
+                parallelism = $parallelism
+                stage = $stageKey
+                recommended_stage_failure_rate_gate_percent = $recommendedStageGate
+            }) | Out-Null
+        $recommendedScaleProfileSocketClosedStageBudgetCsvEntries.Add(
+            ("{0}:{1}:{2}" -f $parallelism, $stageKey, $recommendedStageGate.ToString("0.###", [System.Globalization.CultureInfo]::InvariantCulture))) | Out-Null
+    }
+
     $recommendations.Add([PSCustomObject]@{
             parallelism = $parallelism
             observed_worst_p50_ms = [double][Math]::Round($worstP50, 3)
@@ -299,6 +353,7 @@ foreach ($parallelism in $profileList) {
             observed_worst_max_ms = [double][Math]::Round($worstMax, 3)
             observed_worst_failure_rate_percent = [double][Math]::Round($worstFailureRate, 3)
             observed_worst_socket_closed_failure_rate_percent = [double][Math]::Round($worstSocketClosedFailureRate, 3)
+            observed_attempts_total = $attemptsTotal
             configured_failure_rate_gate_percent = if ($configuredFailureRateGate -lt 0) { $null } else { [double][Math]::Round($configuredFailureRateGate, 3) }
             configured_socket_closed_failure_rate_gate_percent = if ($configuredSocketClosedFailureRateGate -lt 0) { $null } else { [double][Math]::Round($configuredSocketClosedFailureRateGate, 3) }
             recommended_p95_gate_ms = $recommendedP95
@@ -309,6 +364,8 @@ foreach ($parallelism in $profileList) {
             recommended_socket_closed_failure_rate_gate_percent = $recommendedSocketClosedFailureRate
             socket_closed_failure_stage_counts = $stageCounts
             socket_closed_failure_stage_share_percent = $stageSharePercent
+            socket_closed_failure_stage_rate_by_attempt_percent = $stageRateByAttemptPercent
+            recommended_socket_closed_stage_failure_rate_gate_percent = $recommendedStageGatePercent
             dominant_socket_closed_stage = if ([string]::IsNullOrWhiteSpace($dominantStage)) { $null } else { $dominantStage }
             dominant_socket_closed_stage_share_percent = if ([string]::IsNullOrWhiteSpace($dominantStage) -or -not $stageSharePercent.ContainsKey($dominantStage)) { $null } else { [double]$stageSharePercent[$dominantStage] }
         }) | Out-Null
@@ -331,6 +388,8 @@ $summary = [ordered]@{
     }
     round_summaries = [object[]]$roundSummaries.ToArray()
     recommendations = [object[]]$recommendations.ToArray()
+    recommended_scale_profile_socket_closed_stage_failure_rate_budgets = [object[]]$recommendedScaleProfileSocketClosedStageBudgetEntries.ToArray()
+    recommended_scale_profile_socket_closed_stage_failure_rate_budgets_csv = ($recommendedScaleProfileSocketClosedStageBudgetCsvEntries.ToArray() -join ",")
     duration_total_ms = [Math]::Max(0, [int]($finishedAt - $startedAt).TotalMilliseconds)
 }
 

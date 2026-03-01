@@ -9,7 +9,7 @@ on:
       hypothesis_id:
         description: "HypothesisId used for gateway start and summary metadata"
         required: false
-        default: "M2-R6-SOCKETCLOSE-STAGE-BUDGETS-PROFILE-118"
+        default: "M2-R6-STAGE-BUDGET-RECOMMENDER-119"
       iterations:
         description: "Target successful probe iterations"
         required: true
@@ -64,7 +64,7 @@ jobs:
     name: Perf Gate (Self-Hosted Windows)
     runs-on: [self-hosted, windows]
     env:
-      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-SOCKETCLOSE-STAGE-BUDGETS-PROFILE-118' }}
+      PERF_HYPOTHESIS_ID: ${{ github.event.inputs.hypothesis_id || 'M2-R6-STAGE-BUDGET-RECOMMENDER-119' }}
       PERF_ITERATIONS: ${{ github.event.inputs.iterations || '30' }}
       PERF_PARALLELISM: ${{ github.event.inputs.parallelism || '4' }}
       PERF_P50_GATE_MS: ${{ github.event.inputs.p50_gate_ms || '500' }}
@@ -123,3 +123,4 @@ jobs:
             -SocketClosedStageFailureRateBudgets "${{ env.PERF_SOCKET_CLOSED_STAGE_FAILURE_RATE_BUDGETS }}" `
             -MaxDbTimeoutRatePercent ${{ env.PERF_MAX_DB_TIMEOUT_RATE_PCT }} `
             -MaxDiagnosticsQueueSaturationRatePercent ${{ env.PERF_MAX_DIAG_QUEUE_SAT_RATE_PCT }}
+
