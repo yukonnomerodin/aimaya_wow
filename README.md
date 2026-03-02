@@ -6,6 +6,38 @@
 
 ---
 
+# 🧊 Project Frozen (Architectural Transition)
+
+This repository is preserved as a research artifact and architectural checkpoint for the practical study of protocol and server architecture through the following integration model:
+
+**Retail Client → custom Proxy/Gateway → AzerothCore**
+
+The integration layer was implemented and analyzed more deeply than initially anticipated, allowing accelerated extraction of architectural conclusions.
+
+The project established a real protocol-level integration environment in which the following aspects were explored:
+
+* Retail client network protocol
+* Session cryptographic channel
+* Transport gateway model
+* Adaptation of a legacy server core to modern client requirements
+
+The phase was partially implemented and thoroughly analyzed. The research produced key insights into scalability boundaries and structural limitations that arise when building on inherited cores such as AzerothCore and TrinityCore.
+
+As a result, a strategic decision was made to transition toward the development of a proprietary modern server core, designed from the ground up with emphasis on:
+
+* deterministic state management
+* controlled cryptographic boundaries
+* transparent observability
+* long-term architectural scalability
+
+Aimaya_wow remains a frozen architectural baseline and engineering reference point for the next stage of development.
+
+---
+
+The project is not discontinued — it has been transitioned into a separate development branch within the repository and continues to evolve under a new architectural direction.
+
+---
+
 ## 🚀 Key Features
 
 * **Modern Auth Pipeline**: Fully implemented **SRP6** authentication and **TLS** encrypted sessions.
