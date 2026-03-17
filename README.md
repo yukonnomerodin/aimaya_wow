@@ -110,7 +110,7 @@ Aimaya stands on the shoulders of giants. We express our deepest gratitude to th
 
 ## 🌐 Links & Community
 
-* **Official Website**: [aimaya.pro](https://aimaya.pro)
+
 * **Discord Support**: [Join our community](https://discord.gg/TxHGh3dP4g)
 * **Documentation**: Available in the `/docs` folder (Local only).
 
